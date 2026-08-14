@@ -1,0 +1,240 @@
+import bcrypt from 'bcrypt';
+import crypto from 'crypto';
+import { runInTransaction } from '../repositories/transaction.repository.js';
+import { userRepository } from '../repositories/user.repository.js';
+import { mergeGuestSessionIntoUser } from './guestMerge.service.js';
+import { signAccessToken } from './token.service.js';
+import { AppError } from '../utils/errors.js';
+import { env } from '../config/env.js';
+import { sendPasswordResetEmail } from './email.service.js';
+
+const BCRYPT_ROUNDS = 12;
+
+function sanitizeUser(row) {
+  return {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    fullName: row.full_name ?? row.fullName,
+    phoneNumber: row.phone_number ?? row.phoneNumber ?? null,
+    createdAt: row.created_at ?? row.createdAt ?? null,
+  };
+}
+
+function buildAuthResponse(userRow, token) {
+  return {
+    token,
+    user: sanitizeUser(userRow),
+  };
+}
+
+export async function registerUser({ identifier, email, password, fullName, phoneNumber, guestSessionId }) {
+  const inputIdentifier = (identifier || email || phoneNumber || '').trim();
+  if (!inputIdentifier || !password || !fullName?.trim()) {
+    throw new AppError("L'adresse e-mail ou le numéro de téléphone, le mot de passe et le nom complet sont requis", 400);
+  }
+
+  if (password.length < 8) {
+    throw new AppError('Le mot de passe doit contenir au moins 8 caractères', 400);
+  }
+
+  let finalEmail = null;
+  let finalPhone = null;
+
+  if (inputIdentifier.includes('@')) {
+    finalEmail = inputIdentifier.toLowerCase();
+    finalPhone = phoneNumber?.trim() || null;
+  } else {
+    const digitsOnly = inputIdentifier.replace(/\D/g, '');
+    if (digitsOnly.length !== 8) {
+      throw new AppError('Le numéro de téléphone doit contenir exactement 8 chiffres', 400);
+    }
+    finalPhone = digitsOnly;
+    finalEmail = null;
+  }
+
+  const existing = await userRepository.findByIdentifier(inputIdentifier);
+  if (existing) {
+    if (inputIdentifier.includes('@')) {
+      throw new AppError('Un compte avec cette adresse e-mail existe déjà', 409);
+    } else {
+      throw new AppError('Un compte avec ce numéro de téléphone existe déjà', 409);
+    }
+  }
+
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+
+  const user = await runInTransaction(async (tx) => {
+    const created = await userRepository.create({
+      email: finalEmail,
+      passwordHash,
+      fullName: fullName.trim(),
+      phoneNumber: finalPhone,
+      role: 'customer',
+    }, tx);
+
+    await mergeGuestSessionIntoUser(created.id, guestSessionId, tx);
+    return created;
+  });
+
+  const token = signAccessToken(user);
+  return buildAuthResponse(user, token);
+}
+
+export async function loginUser({ identifier, email, password, guestSessionId }) {
+  const inputIdentifier = (identifier || email || '').trim();
+  if (!inputIdentifier || !password) {
+    throw new AppError("L'identifiant et le mot de passe sont requis", 400);
+  }
+
+  const user = await userRepository.findByIdentifier(inputIdentifier);
+  if (!user) {
+    throw new AppError('Connexion impossible. Identifiants incorrects.', 401);
+  }
+
+  const passwordHash = await userRepository.findPasswordHashById(user.id);
+  const valid = await bcrypt.compare(password, passwordHash);
+  if (!valid) {
+    throw new AppError('Connexion impossible. Identifiants incorrects.', 401);
+  }
+
+  await runInTransaction(async (tx) => {
+    await mergeGuestSessionIntoUser(user.id, guestSessionId, tx);
+  });
+
+  const token = signAccessToken(user);
+  return buildAuthResponse(user, token);
+}
+
+export async function requestPasswordReset(email) {
+  if (!email?.trim()) {
+    throw new AppError('Email is required', 400);
+  }
+
+  const user = await userRepository.findByEmail(email);
+
+  // Always return success to avoid email enumeration
+  if (!user) {
+    return { message: 'If an account exists, a reset link has been sent.' };
+  }
+
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + env.passwordResetExpiresHours * 60 * 60 * 1000);
+
+  await userRepository.createPasswordReset(user.id, tokenHash, expiresAt);
+
+  // Send the reset email — errors are logged but never bubble up so the
+  // vague "we sent a link" response is always returned (no email enumeration).
+  sendPasswordResetEmail(user.email, rawToken).catch((emailErr) => {
+    console.error('[email] Failed to send password-reset email:', emailErr.message);
+  });
+
+  const payload = {
+    message: 'If an account exists, a reset link has been sent.',
+  };
+
+  // Only expose the raw token in the response when there are no real SMTP
+  // credentials (i.e. Ethereal / no-email dev mode). Once SMTP_USER is set
+  // the email is actually delivered, so the token must never appear in the API
+  // response regardless of NODE_ENV.
+  if (!env.isProduction && !env.smtpUser) {
+    payload.resetToken = rawToken;
+    payload.expiresAt = expiresAt.toISOString();
+  }
+
+  return payload;
+}
+
+export async function resetPassword({ token, newPassword }) {
+  if (!token?.trim() || !newPassword) {
+    throw new AppError('Token and new password are required', 400);
+  }
+
+  if (newPassword.length < 8) {
+    throw new AppError('Password must be at least 8 characters', 400);
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(token.trim()).digest('hex');
+  const resetRecord = await userRepository.findValidPasswordReset(tokenHash);
+
+  if (!resetRecord) {
+    throw new AppError('Invalid or expired reset token', 400);
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+  await runInTransaction(async (tx) => {
+    await userRepository.updatePassword(resetRecord.userId || resetRecord.user_id, passwordHash, tx);
+    await userRepository.markPasswordResetUsed(resetRecord.id, tx);
+  });
+
+  return { message: 'Password updated successfully' };
+}
+
+export async function updateProfile(userId, { fullName, phoneNumber }) {
+  if (!fullName?.trim()) {
+    throw new AppError('Full name is required', 400);
+  }
+
+  const updated = await userRepository.updateProfile(userId, {
+    fullName: fullName.trim(),
+    phoneNumber: phoneNumber?.trim() || null,
+  });
+
+  if (!updated) {
+    throw new AppError('User not found', 404);
+  }
+
+  return { user: sanitizeUser(updated) };
+}
+
+export async function changePassword(userId, { currentPassword, newPassword }) {
+  if (!currentPassword || !newPassword) {
+    throw new AppError('Current and new password are required', 400);
+  }
+
+  if (newPassword.length < 8) {
+    throw new AppError('Password must be at least 8 characters', 400);
+  }
+
+  const passwordHash = await userRepository.findPasswordHashById(userId);
+  if (!passwordHash) {
+    throw new AppError('User not found', 404);
+  }
+
+  const valid = await bcrypt.compare(currentPassword, passwordHash);
+  if (!valid) {
+    throw new AppError('Current password is incorrect', 401);
+  }
+
+  const nextHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+  await userRepository.updatePassword(userId, nextHash);
+
+  return { message: 'Password updated successfully' };
+}
+
+export async function getProfile(userId) {
+  const user = await userRepository.findById(userId);
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+  return { user: sanitizeUser(user) };
+}
+
+/** Legacy admin panel login — issues JWT for the seeded admin user. */
+export async function adminPanelLogin(password) {
+
+  if (password !== env.adminPassword) {
+    throw new AppError('Invalid password', 401);
+  }
+
+  const admin = await userRepository.findByEmail(env.adminEmail);
+  if (!admin || admin.role !== 'admin') {
+    throw new AppError('Admin account not configured. Run db:seed first.', 503);
+  }
+
+  const token = signAccessToken(admin);
+  return { token, user: sanitizeUser(admin) };
+}
+

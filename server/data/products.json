@@ -1,0 +1,134 @@
+[
+  {
+    "name": "Set Comfy",
+    "description": "Comfy set 🌸",
+    "price": 45,
+    "discount": 3,
+    "category": "femme",
+    "mainImage": "/pictures/comfybleu.jpg",
+    "thumbnails": [
+      "/pictures/comfybleu.jpg",
+      "/pictures/comfyrose.jpg",
+      "/pictures/comfyjaune.jpg",
+      "/pictures/comfybeige.jpg"
+    ],
+    "colors": [
+      {
+        "id": "bleu",
+        "name": "Bleu",
+        "image": "/pictures/comfybleu.jpg"
+      },
+      {
+        "id": "rose",
+        "name": "Rose",
+        "image": "/pictures/comfyrose.jpg"
+      },
+      {
+        "id": "jaune",
+        "name": "Jaune",
+        "image": "/pictures/comfyjaune.jpg"
+      },
+      {
+        "id": "beige",
+        "name": "Beige",
+        "image": "/pictures/comfybeige.jpg"
+      }
+    ],
+    "sizes": [
+      "36",
+      "38",
+      "40",
+      "42",
+      "44",
+      "46"
+    ],
+    "stock": {
+      "bleu-36": 0,
+      "bleu-38": 0,
+      "bleu-40": 0,
+      "bleu-42": 0,
+      "bleu-44": 0,
+      "bleu-46": 0,
+      "rose-36": 0,
+      "rose-38": 0,
+      "rose-40": 0,
+      "rose-42": 0,
+      "rose-44": 0,
+      "rose-46": 0,
+      "jaune-36": 0,
+      "jaune-38": 0,
+      "jaune-40": 0,
+      "jaune-42": 0,
+      "jaune-44": 0,
+      "jaune-46": 0,
+      "beige-36": 0,
+      "beige-38": 0,
+      "beige-40": 0,
+      "beige-42": 0,
+      "beige-44": 0,
+      "beige-46": 0
+    },
+    "collectionImage": "/pictures/comfybleu.jpg",
+    "id": "1786126936651"
+  },
+  {
+    "name": "Set Blush",
+    "description": "Set blush 🌸",
+    "price": 53,
+    "discount": 5,
+    "category": "femme",
+    "mainImage": "/pictures/blushmarron.jpg",
+    "thumbnails": [
+      "/pictures/blushmarron.jpg",
+      "/pictures/blushrose.jpg",
+      "/pictures/blushblanccasse.jpg"
+    ],
+    "colors": [
+      {
+        "id": "marron",
+        "name": "Marron",
+        "image": "/pictures/blushmarron.jpg"
+      },
+      {
+        "id": "rose",
+        "name": "Rose",
+        "image": "/pictures/blushrose.jpg"
+      },
+      {
+        "id": "blanc-cass",
+        "name": "Blanc cassé",
+        "image": "/pictures/blusblanccasse.jpg"
+      }
+    ],
+    "sizes": [
+      "36",
+      "38",
+      "40",
+      "42",
+      "44",
+      "46"
+    ],
+    "stock": {
+      "marron-36": 0,
+      "marron-38": 0,
+      "marron-40": 0,
+      "marron-42": 0,
+      "marron-44": 0,
+      "marron-46": 0,
+      "rose-36": 0,
+      "rose-38": 0,
+      "rose-40": 0,
+      "rose-42": 0,
+      "rose-44": 0,
+      "rose-46": 0,
+      "blanc-cass-36": 0,
+      "blanc-cass-38": 0,
+      "blanc-cass-40": 0,
+      "blanc-cass-42": 0,
+      "blanc-cass-44": 0,
+      "blanc-cass-46": 0
+    },
+    "collectionImage": "/pictures/blushmarron.jpg",
+    "id": "1786127186981"
+  }
+]

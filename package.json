@@ -1,0 +1,76 @@
+{
+
+  "name": "silky-app",
+
+  "private": true,
+
+  "version": "1.0.0",
+
+  "type": "module",
+
+  "scripts": {
+
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+
+    "dev:client": "vite",
+
+    "dev:server": "node server/index.js",
+
+    "build": "vite build",
+
+    "preview": "vite preview",
+
+    "start:server": "node server/index.js",
+
+    "db:schema": "node server/db/apply-schema.js",
+
+    "db:seed": "node server/db/seed.js"
+
+  },
+
+  "dependencies": {
+
+    "bcrypt": "^6.0.0",
+
+    "cookie-parser": "^1.4.7",
+
+    "cors": "^2.8.5",
+
+    "dotenv": "^17.4.2",
+
+    "drizzle-kit": "^0.31.10",
+
+    "drizzle-orm": "^0.45.2",
+
+    "express": "^4.21.2",
+
+    "jsonwebtoken": "^9.0.3",
+
+    "jspdf": "^2.5.2",
+
+    "multer": "^1.4.5-lts.1",
+
+    "nodemailer": "^9.0.5",
+
+    "pg": "^8.23.0",
+
+    "react": "^19.1.0",
+
+    "react-dom": "^19.1.0",
+
+    "react-router-dom": "^7.6.0"
+
+  },
+
+  "devDependencies": {
+
+    "@vitejs/plugin-react": "^4.5.0",
+
+    "concurrently": "^9.1.2",
+
+    "vite": "^6.3.0"
+
+  }
+
+}
+

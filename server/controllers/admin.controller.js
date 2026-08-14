@@ -1,0 +1,113 @@
+import * as adminService from '../services/admin.service.js';
+import * as inventoryService from '../services/inventory.service.js';
+import * as analyticsService from '../services/analytics.service.js';
+import * as exchangeService from '../services/exchange.service.js';
+import * as authService from '../services/auth.service.js';
+import { sendError } from '../utils/errors.js';
+
+export async function login(req, res) {
+  try {
+    const { password } = req.body;
+    const result = await authService.adminPanelLogin(password);
+    res.json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function logout(_req, res) {
+  res.json({ ok: true });
+}
+
+export async function createManualOrder(req, res) {
+  const {
+    customerName,
+    phoneNumber,
+    orderSource,
+    items,
+    customerEmail,
+    shippingAddress,
+    deliveryFee,
+  } = req.body;
+
+  try {
+    const order = await adminService.createManualOrder({
+      customerName,
+      phoneNumber,
+      orderSource,
+      items,
+      customerEmail,
+      shippingAddress,
+      deliveryFee,
+    });
+    res.status(201).json(order);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function previewExchange(req, res) {
+  const { customer, items, deliveryFee } = req.body;
+  const orderId = req.params.id;
+
+  try {
+    const preview = await exchangeService.previewExchange({
+      orderId,
+      customer,
+      items,
+      deliveryFee,
+    });
+    res.json(preview);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function createExchange(req, res) {
+  const { customer, items, deliveryFee } = req.body;
+  const orderId = req.params.id;
+
+  try {
+    const updatedOrder = await exchangeService.createExchange({
+      orderId,
+      customer,
+      items,
+      deliveryFee,
+    });
+    res.status(201).json(updatedOrder);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function getInventory(_req, res) {
+  try {
+    const inventory = await inventoryService.getInventory();
+    res.json(inventory);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function updateInventory(req, res) {
+  const { stockQuantity } = req.body;
+
+  try {
+    const variant = await inventoryService.updateVariantStock(req.params.variantId, stockQuantity);
+    res.json(variant);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function getAnalytics(req, res) {
+  const { granularity, limit } = req.query;
+
+  try {
+    const analytics = await analyticsService.getAnalytics({ granularity, limit });
+    res.json(analytics);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+

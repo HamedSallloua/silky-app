@@ -1,0 +1,45 @@
+/* Discount price display */
+.product_price_display {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.product_price_display.product_price_large {
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.product_price_display.product_price_small {
+  font-size: 13px;
+}
+
+.price_original {
+  text-decoration: line-through;
+  color: #888888;
+  font-weight: normal;
+}
+
+.price_discount_amount {
+  color: #e53935;
+  font-size: 0.75em;
+  font-weight: 600;
+}
+
+.price_new {
+  font-weight: bold;
+  color: inherit;
+}
+
+.product_price_discounted.product_price_large .price_discount_amount {
+  font-size: 16px;
+}
+
+.product_info .product_price_display {
+  justify-content: center;
+}
+
+.product_card_price .product_price_display {
+  justify-content: center;
+}

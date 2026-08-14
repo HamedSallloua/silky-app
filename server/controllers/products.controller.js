@@ -1,0 +1,134 @@
+import * as productService from '../services/product.service.js';
+import * as reviewService from '../services/review.service.js';
+import { sendError } from '../utils/errors.js';
+
+export async function list(req, res) {
+  try {
+    const { category, search, page, limit, includeHidden } = req.query;
+    const shouldIncludeHidden = includeHidden === 'true' || includeHidden === true;
+    const hasFilters = category || search || page || limit;
+
+    if (!hasFilters) {
+      const products = await productService.getAllProducts({ includeHidden: shouldIncludeHidden });
+      return res.json(products);
+    }
+
+    const result = await productService.listProducts({
+      category,
+      search,
+      page,
+      limit,
+      includeHidden: shouldIncludeHidden,
+    });
+    res.json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function uploadImage(req, res) {
+  if (!req.file) return res.status(400).json({ error: 'Image file required' });
+  res.json({ url: `/uploads/${req.file.filename}` });
+}
+
+export async function getById(req, res) {
+  try {
+    const product = await productService.getProductById(req.params.id);
+    res.json(product);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function create(req, res) {
+  const { name, title } = req.body;
+  if (!name?.trim() && !title?.trim()) {
+    return res.status(400).json({ error: 'Product name is required' });
+  }
+
+  try {
+    const product = await productService.createProduct({
+      ...req.body,
+      title: title || name,
+    });
+    res.status(201).json(product);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function update(req, res) {
+  try {
+    const product = await productService.updateProduct(req.params.id, req.body);
+    res.json(product);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function remove(req, res) {
+  try {
+    await productService.deleteProduct(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function listReviews(req, res) {
+  try {
+    const data = await reviewService.getProductReviews(req.params.id);
+    res.json(data);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function createReview(req, res) {
+  if (req.user?.role === 'admin') {
+    return res.status(403).json({ error: 'Les administrateurs ne peuvent pas soumettre d\'avis.' });
+  }
+
+  const { rating, comment, authorName } = req.body;
+
+  try {
+    const result = await reviewService.createProductReview({
+      productId: req.params.id,
+      userId: req.user?.id || null,
+      authorName: req.user?.full_name || req.user?.fullName || authorName,
+      rating,
+      comment,
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function listAdminProductReviews(req, res) {
+  try {
+    const reviews = await reviewService.getAllProductReviews(req.params.id);
+    res.json(reviews);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function updateProductReview(req, res) {
+  const { status, showInGeneral } = req.body;
+  try {
+    const review = await reviewService.updateProductReview(req.params.id, { status, showInGeneral });
+    res.json(review);
+  } catch (err) {
+    sendError(res, err);
+  }
+}
+
+export async function removeProductReview(req, res) {
+  try {
+    await reviewService.deleteProductReview(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    sendError(res, err);
+  }
+}
