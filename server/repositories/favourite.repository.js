@@ -1,35 +1,44 @@
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { db } from '../db/orm.js';
-import { favourites, products } from '../models/index.js';
+import { favourites, products, categories } from '../models/index.js';
 
 export const favouriteRepository = {
   async findByShopper({ userId = null, guestSessionId = null }, tx = db) {
-    let condition;
+    let ownerCondition;
     if (userId) {
-      condition = eq(favourites.userId, userId);
+      ownerCondition = eq(favourites.userId, userId);
     } else if (guestSessionId) {
-      condition = eq(favourites.guestSessionId, guestSessionId);
+      ownerCondition = eq(favourites.guestSessionId, guestSessionId);
     } else {
       return [];
     }
 
+    const condition = and(ownerCondition, eq(products.isActive, true));
+
     const rows = await tx.select({
-      id: favourites.id,
       productId: favourites.productId,
       createdAt: favourites.createdAt,
-      productTitle: products.title,
-      productSlug: products.slug,
+      name: products.title,
       price: products.price,
-      discountAmount: products.discountAmount,
-      collectionImageUrl: products.collectionImageUrl,
-      isFeatured: products.isFeatured,
-      isActive: products.isActive,
+      discount: products.discountAmount,
+      image: products.collectionImageUrl,
+      category: categories.slug,
     })
     .from(favourites)
     .innerJoin(products, eq(favourites.productId, products.id))
-    .where(condition);
+    .innerJoin(categories, eq(products.categoryId, categories.id))
+    .where(condition)
+    .orderBy(desc(favourites.createdAt));
 
-    return rows;
+    return rows.map((row) => ({
+      productId: row.productId,
+      name: row.name,
+      category: row.category,
+      price: Number(row.price),
+      discount: Number(row.discount || 0),
+      image: row.image || '',
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+    }));
   },
 
   async add({ userId = null, guestSessionId = null }, productId, tx = db) {

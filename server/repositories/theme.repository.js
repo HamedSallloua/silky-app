@@ -2,25 +2,30 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/orm.js';
 import { siteSettings } from '../models/index.js';
 
+const DEFAULT_THEME = {
+  primary: '#8D191C',
+  secondary: '#F3EBEC',
+  heroLeftImage: '/pictures/femme_example.jpg',
+  heroRightImage: '/pictures/enfant_example.jpg',
+};
+
 export const themeRepository = {
   async getSettings(tx = db) {
     const [row] = await tx.select().from(siteSettings).where(eq(siteSettings.id, 1));
     if (!row) {
       const [inserted] = await tx.insert(siteSettings).values({ id: 1 }).returning();
       return {
-        primaryColor: inserted.primaryColor,
-        secondaryColor: inserted.secondaryColor,
-        heroLeftImage: inserted.heroLeftImage,
-        heroRightImage: inserted.heroRightImage,
-        deliveryFee: parseFloat(inserted.deliveryFee),
+        primary: inserted.primaryColor || DEFAULT_THEME.primary,
+        secondary: inserted.secondaryColor || DEFAULT_THEME.secondary,
+        heroLeftImage: inserted.heroLeftImage || DEFAULT_THEME.heroLeftImage,
+        heroRightImage: inserted.heroRightImage || DEFAULT_THEME.heroRightImage,
       };
     }
     return {
-      primaryColor: row.primaryColor,
-      secondaryColor: row.secondaryColor,
-      heroLeftImage: row.heroLeftImage,
-      heroRightImage: row.heroRightImage,
-      deliveryFee: parseFloat(row.deliveryFee),
+      primary: row.primaryColor || DEFAULT_THEME.primary,
+      secondary: row.secondaryColor || DEFAULT_THEME.secondary,
+      heroLeftImage: row.heroLeftImage || DEFAULT_THEME.heroLeftImage,
+      heroRightImage: row.heroRightImage || DEFAULT_THEME.heroRightImage,
     };
   },
 
@@ -29,16 +34,16 @@ export const themeRepository = {
 
     const [updated] = await tx.insert(siteSettings).values({
       id: 1,
-      primaryColor: primary || current.primaryColor,
-      secondaryColor: secondary || current.secondaryColor,
+      primaryColor: primary || current.primary,
+      secondaryColor: secondary || current.secondary,
       heroLeftImage: heroLeftImage || current.heroLeftImage,
       heroRightImage: heroRightImage || current.heroRightImage,
     })
     .onConflictDoUpdate({
       target: [siteSettings.id],
       set: {
-        primaryColor: primary || current.primaryColor,
-        secondaryColor: secondary || current.secondaryColor,
+        primaryColor: primary || current.primary,
+        secondaryColor: secondary || current.secondary,
         heroLeftImage: heroLeftImage || current.heroLeftImage,
         heroRightImage: heroRightImage || current.heroRightImage,
         updatedAt: new Date(),
@@ -47,16 +52,15 @@ export const themeRepository = {
     .returning();
 
     return {
-      primaryColor: updated.primaryColor,
-      secondaryColor: updated.secondaryColor,
-      heroLeftImage: updated.heroLeftImage,
-      heroRightImage: updated.heroRightImage,
-      deliveryFee: parseFloat(updated.deliveryFee),
+      primary: updated.primaryColor || DEFAULT_THEME.primary,
+      secondary: updated.secondaryColor || DEFAULT_THEME.secondary,
+      heroLeftImage: updated.heroLeftImage || DEFAULT_THEME.heroLeftImage,
+      heroRightImage: updated.heroRightImage || DEFAULT_THEME.heroRightImage,
     };
   },
 
   async getDeliveryFee(tx = db) {
-    const settings = await this.getSettings(tx);
-    return settings.deliveryFee;
+    const [row] = await tx.select({ deliveryFee: siteSettings.deliveryFee }).from(siteSettings).where(eq(siteSettings.id, 1));
+    return row ? parseFloat(row.deliveryFee) : 8;
   }
 };

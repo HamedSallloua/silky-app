@@ -2,14 +2,25 @@ import { eq, and, inArray, desc, sql } from 'drizzle-orm';
 import { db } from '../db/orm.js';
 import { orders, orderItems, orderExchanges, exchangeItems, productVariants, products } from '../models/index.js';
 
+function parseCustomerName(fullName = '') {
+  const parts = (fullName || '').trim().split(/\s+/);
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' ') || '',
+  };
+}
+
 function formatOrder(order, items = [], exchanges = []) {
   if (!order) return null;
+  const { firstName, lastName } = parseCustomerName(order.customerName);
   return {
     id: order.id,
     orderNumber: order.orderNumber,
     userId: order.userId,
     guestSessionId: order.guestSessionId,
     customer: {
+      firstName,
+      lastName,
       name: order.customerName,
       email: order.customerEmail,
       phone: order.customerPhone,
@@ -29,32 +40,37 @@ function formatOrder(order, items = [], exchanges = []) {
     deliveryFee: parseFloat(order.deliveryFee),
     total: parseFloat(order.totalAmount),
     orderSource: order.orderSource,
-    status: order.status,
-    exchanges: exchanges.map((e) => ({
-      id: e.id,
-      exchangeNumber: e.exchangeNumber,
-      exchangeSequence: e.exchangeSequence,
-      customer: {
-        name: e.customerName,
-        email: e.customerEmail,
-        phone: e.customerPhone,
-        address: e.shippingAddress,
-      },
-      items: (e.items || []).map((ei) => ({
-        id: ei.id,
-        variantId: ei.variantId,
-        name: ei.productTitle,
-        variantLabel: ei.variantLabel,
-        image: ei.imageUrl,
-        quantity: ei.quantity,
-        price: parseFloat(ei.unitPrice),
-        total: parseFloat(ei.unitPrice) * ei.quantity,
-      })),
-      subtotal: parseFloat(e.subtotal),
-      deliveryFee: parseFloat(e.deliveryFee),
-      total: parseFloat(e.totalAmount),
-      createdAt: e.createdAt,
-    })),
+    status: order.status === 'processing' ? 'pending' : order.status,
+    exchanges: exchanges.map((e) => {
+      const { firstName: exFirst, lastName: exLast } = parseCustomerName(e.customerName);
+      return {
+        id: e.id,
+        exchangeNumber: e.exchangeNumber,
+        exchangeSequence: e.exchangeSequence,
+        customer: {
+          firstName: exFirst,
+          lastName: exLast,
+          name: e.customerName,
+          email: e.customerEmail,
+          phone: e.customerPhone,
+          address: e.shippingAddress,
+        },
+        items: (e.items || []).map((ei) => ({
+          id: ei.id,
+          variantId: ei.variantId,
+          name: ei.productTitle,
+          variantLabel: ei.variantLabel,
+          image: ei.imageUrl,
+          quantity: ei.quantity,
+          price: parseFloat(ei.unitPrice),
+          total: parseFloat(ei.unitPrice) * ei.quantity,
+        })),
+        subtotal: parseFloat(e.subtotal),
+        deliveryFee: parseFloat(e.deliveryFee),
+        total: parseFloat(e.totalAmount),
+        createdAt: e.createdAt,
+      };
+    }),
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   };

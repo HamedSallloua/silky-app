@@ -78,7 +78,7 @@ export async function previewExchange({ orderId, customer, items, deliveryFee = 
     const v = await productRepository.findVariantById(variantId);
     if (v) {
       const p = await productRepository.findById(v.productId);
-      variantDetailsMap.set(variantId, { ...v, productTitle: p?.title || '', price: p?.price || 0, discountAmount: p?.discountAmount || 0 });
+      variantDetailsMap.set(variantId, { ...v, productTitle: p?.name || '', price: p?.price || 0, discountAmount: p?.discount || 0 });
     }
   }
 
@@ -208,7 +208,7 @@ export async function createExchange({ orderId, customer, items, deliveryFee = n
       const v = await productRepository.findVariantById(variantId, tx);
       if (v) {
         const p = await productRepository.findById(v.productId, tx);
-        variantDetailsMap.set(variantId, { ...v, productTitle: p?.title || '', price: p?.price || 0, discountAmount: p?.discountAmount || 0 });
+        variantDetailsMap.set(variantId, { ...v, productTitle: p?.name || '', price: p?.price || 0, discountAmount: p?.discount || 0 });
       }
     }
 

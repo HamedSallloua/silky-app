@@ -173,6 +173,24 @@ export const analyticsRepository = {
     const totalRevenue = Number(kpi.total_revenue || 0);
     const sourceTotalRevenue = sources.reduce((sum, row) => sum + Number(row.revenue || 0), 0);
 
+    const salesBySource = sources.map((r) => ({
+      source: r.order_source,
+      orderCount: Number(r.order_count || 0),
+      revenue: Number(r.revenue || 0),
+      percentage:
+        sourceTotalRevenue > 0
+          ? Math.round((Number(r.revenue || 0) / sourceTotalRevenue) * 1000) / 10
+          : 0,
+    }));
+
+    const mappedTopProducts = topProducts.map((r) => ({
+      productTitle: r.product_title,
+      title: r.product_title,
+      quantitySold: Number(r.units_sold || 0),
+      unitsSold: Number(r.units_sold || 0),
+      revenue: Number(r.total_revenue || 0),
+    }));
+
     return {
       kpi: {
         totalRevenue,
@@ -180,15 +198,8 @@ export const analyticsRepository = {
         averageOrderValue: Number(kpi.average_order_value || 0),
         totalCustomers: Number(kpi.total_customers || 0),
       },
-      salesBySource: sources.map((r) => ({
-        source: r.order_source,
-        orderCount: Number(r.order_count || 0),
-        revenue: Number(r.revenue || 0),
-        percentage:
-          sourceTotalRevenue > 0
-            ? Math.round((Number(r.revenue || 0) / sourceTotalRevenue) * 1000) / 10
-            : 0,
-      })),
+      salesBySource,
+      sources: salesBySource,
       revenueTrend: trend
         .map((r) => ({
           date: r.period,
@@ -196,11 +207,7 @@ export const analyticsRepository = {
           orderCount: Number(r.order_count || 0),
         }))
         .reverse(),
-      topProducts: topProducts.map((r) => ({
-        productTitle: r.product_title,
-        quantitySold: Number(r.units_sold || 0),
-        revenue: Number(r.total_revenue || 0),
-      })),
+      topProducts: mappedTopProducts,
     };
   }
 };

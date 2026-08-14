@@ -106,59 +106,73 @@ export const productRepository = {
     const variants = await tx.select().from(productVariants).where(eq(productVariants.productId, id));
     const images = await tx.select().from(productImages).where(eq(productImages.productId, id)).orderBy(asc(productImages.sortOrder));
 
-    // Construct color map
+    // Construct color map, stock, and sizes exactly matching original serializeProduct
     const colorMap = new Map();
-    const stockMap = {};
+    const sizeSet = new Set();
     const stock = {};
 
     for (const v of variants) {
-      stockMap[getStockKey(v.size, v.colorSlug)] = v.stockQuantity;
+      if (v.size) {
+        sizeSet.add(v.size);
+      }
       const stockKey = v.colorSlug && v.size ? `${v.colorSlug}-${v.size}` : (v.colorSlug || v.size || 'default');
       stock[stockKey] = v.stockQuantity;
 
-      if (!colorMap.has(v.colorSlug)) {
+      if (v.colorSlug && !colorMap.has(v.colorSlug)) {
         colorMap.set(v.colorSlug, {
           id: v.colorSlug,
-          name: v.colorName,
-          slug: v.colorSlug,
-          imageUrl: v.colorImageUrl || null,
+          name: v.colorName || v.colorSlug,
+          image: v.colorImageUrl || product.collectionImageUrl || '',
+          images: [],
         });
       }
     }
 
-    // Attach primary image fallback to colors if missing
-    const primaryImg = images.find((i) => i.isPrimary) || images[0];
-    const colors = Array.from(colorMap.values()).map((c) => {
-      if (!c.imageUrl) {
-        const colorSpecificImg = images.find((i) => i.colorSlug === c.slug);
-        c.imageUrl = colorSpecificImg?.imageUrl || primaryImg?.imageUrl || null;
-      }
-      return c;
-    });
+    const sortedImages = [...images].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-    const sizes = Array.from(new Set(variants.map((v) => v.size)));
+    for (const img of sortedImages) {
+      if (!img.colorSlug) continue;
+      const slug = img.colorSlug;
+      if (!colorMap.has(slug)) {
+        colorMap.set(slug, {
+          id: slug,
+          name: slug.charAt(0).toUpperCase() + slug.slice(1),
+          image: img.imageUrl,
+          images: [],
+        });
+      }
+      const colorObj = colorMap.get(slug);
+      if (!colorObj.images.includes(img.imageUrl)) {
+        colorObj.images.push(img.imageUrl);
+      }
+    }
+
+    for (const color of colorMap.values()) {
+      if (color.images.length) {
+        color.image = color.images[0];
+      } else if (color.image) {
+        color.images.push(color.image);
+      }
+    }
+
+    const primaryImage = sortedImages.find((img) => img.isPrimary) || sortedImages[0];
+    const allImageUrls = sortedImages.map((img) => img.imageUrl);
 
     return {
       id: product.id,
-      title: product.title,
-      slug: product.slug,
+      name: product.title,
       description: product.description,
       price: parseFloat(product.price),
-      discountAmount: parseFloat(product.discountAmount || 0),
-      categoryId: product.categoryId,
-      categoryName: product.categoryName,
-      categorySlug: product.categorySlug,
-      collectionImageUrl: product.collectionImageUrl,
-      isFeatured: product.isFeatured,
-      isActive: product.isActive,
-      colors,
-      sizes,
+      discount: parseFloat(product.discountAmount || 0),
+      category: product.categorySlug,
+      mainImage: primaryImage?.imageUrl || product.collectionImageUrl || '',
+      thumbnails: allImageUrls.length ? allImageUrls : [product.collectionImageUrl].filter(Boolean),
+      colors: [...colorMap.values()],
+      sizes: [...sizeSet],
       stock,
-      stockMap,
-      variants,
-      images,
-      createdAt: product.createdAt,
-      updatedAt: product.updatedAt,
+      collectionImage: product.collectionImageUrl || primaryImage?.imageUrl || '',
+      isHidden: product.isActive === false,
+      is_active: Boolean(product.isActive),
     };
   },
 

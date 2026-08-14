@@ -86,7 +86,7 @@ export async function addCartItem(shopper, payload) {
     }
 
     const product = await productRepository.findById(variant.productId, tx);
-    if (!product || !product.isActive) {
+    if (!product || !product.is_active) {
       throw new AppError('Variant not found', 404);
     }
 
@@ -96,7 +96,7 @@ export async function addCartItem(shopper, payload) {
 
     if (nextQuantity > variant.stockQuantity) {
       throw new AppError(
-        `${product.title}: stock insuffisant (${variant.stockQuantity} disponible(s))`,
+        `${product.name}: stock insuffisant (${variant.stockQuantity} disponible(s))`,
         400
       );
     }

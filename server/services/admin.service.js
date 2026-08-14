@@ -18,18 +18,27 @@ export async function createManualOrder({
     throw new AppError('Au moins un article est requis', 400);
   }
 
-  const validSources = ['web', 'social_media', 'instagram', 'whatsapp', 'phone'];
-  const finalSource = validSources.includes(orderSource) ? orderSource : 'phone';
+  const MANUAL_ORDER_SOURCES = ['social_media', 'instagram', 'whatsapp', 'phone'];
+  if (!MANUAL_ORDER_SOURCES.includes(orderSource)) {
+    throw new AppError(
+      "orderSource must be 'social_media', 'phone', 'instagram', or 'whatsapp'",
+      400
+    );
+  }
+
+  const orderNumber = `SLK-M-${Date.now().toString().slice(-8)}`;
 
   return createOrder({
     customer: {
       name: customerName.trim(),
       email: customerEmail?.trim() || null,
       phone: phoneNumber.trim(),
-      address: shippingAddress?.trim() || 'Vente directe / Téléphone',
+      address: shippingAddress?.trim() || 'Commande manuelle (hors ligne)',
     },
     items,
     userId: null,
-    orderSource: finalSource,
+    orderSource,
+    deliveryFee,
+    orderNumber,
   });
 }

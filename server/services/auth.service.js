@@ -18,6 +18,7 @@ function sanitizeUser(row) {
     fullName: row.full_name ?? row.fullName,
     phoneNumber: row.phone_number ?? row.phoneNumber ?? null,
     createdAt: row.created_at ?? row.createdAt ?? null,
+    updatedAt: row.updated_at ?? row.updatedAt ?? null,
   };
 }
 

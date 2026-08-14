@@ -32,12 +32,8 @@ export async function toggleFavourite(shopper, productId) {
     favorited = true;
   }
 
-  const favouritesList = await favouriteRepository.findByShopper(shopper);
-  const productIds = favouritesList.map((f) => f.productId);
   return {
+    productId,
     isFavourite: favorited,
-    favorited,
-    productIds,
-    favourites: favouritesList,
   };
 }

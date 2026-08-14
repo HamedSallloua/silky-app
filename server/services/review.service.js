@@ -1,4 +1,5 @@
 import { reviewRepository } from '../repositories/review.repository.js';
+import { productRepository } from '../repositories/product.repository.js';
 import { AppError } from '../utils/errors.js';
 
 export async function getPublishedStoreReviews() {
@@ -18,12 +19,13 @@ export async function createStoreReview({ authorName, email, body, rating }) {
     throw new AppError('La note doit être entre 1 et 5', 400);
   }
 
-  return reviewRepository.createStoreReview({
+  const review = await reviewRepository.createStoreReview({
     authorName: authorName.trim(),
     email: email?.trim() || '',
     body: body.trim(),
     rating: ratingNum,
   });
+  return { message: 'Review submitted for approval', id: review.id };
 }
 
 export async function updateStoreReviewStatus(id, status) {
@@ -47,7 +49,9 @@ export async function deleteStoreReview(id) {
 }
 
 export async function getProductReviews(productId) {
-  return reviewRepository.getProductReviews(productId);
+  const result = await reviewRepository.getProductReviews(productId);
+  if (result === null) throw new AppError('Product not found', 404);
+  return result;
 }
 
 export async function getAllProductReviews(productId) {
@@ -61,6 +65,11 @@ export async function createProductReview({ productId, userId, authorName, ratin
   const ratingNum = parseInt(rating, 10);
   if (isNaN(ratingNum) || ratingNum < 1 || ratingNum > 5) {
     throw new AppError('La note doit être entre 1 et 5', 400);
+  }
+
+  const product = await productRepository.findById(productId);
+  if (!product || !product.is_active) {
+    throw new AppError('Product not found', 404);
   }
 
   return reviewRepository.createProductReview({

@@ -45,7 +45,7 @@ function extractCustomerInfo(customer) {
   return { name, phone, email, address };
 }
 
-export async function createOrder({ customer, items, userId = null, orderSource = 'web' }) {
+export async function createOrder({ customer, items, userId = null, orderSource = 'web', deliveryFee: customDeliveryFee = null, orderNumber: customOrderNumber = null }) {
   const custInfo = extractCustomerInfo(customer);
   if (!custInfo.name || !custInfo.phone || !custInfo.address) {
     throw new AppError('Les informations client (nom, téléphone, adresse) sont requises', 400);
@@ -77,21 +77,21 @@ export async function createOrder({ customer, items, userId = null, orderSource 
       }
 
       const product = await productRepository.findById(variant.productId, tx);
-      if (!product || !product.isActive) {
+      if (!product || !product.is_active) {
         throw new AppError(`Produit non disponible (${variant.sku})`, 400);
       }
 
       const quantity = Math.max(1, Number(item.quantity) || 1);
       if (variant.stockQuantity < quantity) {
         throw new AppError(
-          `${product.title}: stock insuffisant (${variant.stockQuantity} disponible(s))`,
+          `${product.name}: stock insuffisant (${variant.stockQuantity} disponible(s))`,
           400
         );
       }
 
       const unitPrice = Number(item.price) !== undefined && !isNaN(Number(item.price))
         ? Number(item.price)
-        : (product.price - product.discountAmount);
+        : (product.price - product.discount);
 
       const lineSubtotal = unitPrice * quantity;
       subtotal += lineSubtotal;
@@ -101,17 +101,19 @@ export async function createOrder({ customer, items, userId = null, orderSource 
 
       validatedItems.push({
         variantId: variant.id,
-        name: product.title,
+        name: product.name,
         variantLabel: `${variant.colorName} / ${variant.size}`,
-        image: variant.colorImageUrl || product.collectionImageUrl || null,
+        image: variant.colorImageUrl || product.collectionImage || product.mainImage || null,
         quantity,
         price: unitPrice,
       });
     }
 
-    const deliveryFee = await themeRepository.getDeliveryFee(tx);
+    const deliveryFee = (customDeliveryFee !== null && customDeliveryFee !== undefined)
+      ? Number(customDeliveryFee)
+      : await themeRepository.getDeliveryFee(tx);
     const totalAmount = subtotal + deliveryFee;
-    const orderNumber = generateOrderNumber();
+    const orderNumber = customOrderNumber || generateOrderNumber();
 
     const order = await orderRepository.createOrder({
       orderNumber,

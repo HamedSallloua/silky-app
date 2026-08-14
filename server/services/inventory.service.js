@@ -1,30 +1,40 @@
+import { eq, desc } from 'drizzle-orm';
+import { db } from '../db/orm.js';
+import { products, productVariants } from '../models/index.js';
 import { productRepository } from '../repositories/product.repository.js';
 import { AppError } from '../utils/errors.js';
 
 const LOW_STOCK_THRESHOLD = 5;
 
 export async function getInventory() {
-  const products = await productRepository.findAll({ includeHidden: true });
-  const result = [];
+  const rows = await db.select({
+    variantId: productVariants.id,
+    productId: products.id,
+    productTitle: products.title,
+    productIsActive: products.isActive,
+    size: productVariants.size,
+    colorSlug: productVariants.colorSlug,
+    colorName: productVariants.colorName,
+    sku: productVariants.sku,
+    stockQuantity: productVariants.stockQuantity,
+    colorImageUrl: productVariants.colorImageUrl,
+  })
+  .from(productVariants)
+  .innerJoin(products, eq(productVariants.productId, products.id));
 
-  for (const p of products) {
-    for (const v of (p.variants || [])) {
-      const stockQuantity = v.stockQuantity;
-      result.push({
-        variantId: v.id,
-        productId: p.id,
-        productTitle: p.title,
-        productIsHidden: p.isActive === false,
-        size: v.size,
-        colorSlug: v.colorSlug,
-        colorName: v.colorName,
-        sku: v.sku,
-        stockQuantity: stockQuantity,
-        colorImageUrl: v.colorImageUrl,
-        lowStock: stockQuantity <= LOW_STOCK_THRESHOLD,
-      });
-    }
-  }
+  const result = rows.map((row) => ({
+    variantId: row.variantId,
+    productId: row.productId,
+    productTitle: row.productTitle,
+    productIsHidden: row.productIsActive === false,
+    size: row.size,
+    colorSlug: row.colorSlug,
+    colorName: row.colorName,
+    sku: row.sku,
+    stockQuantity: row.stockQuantity,
+    colorImageUrl: row.colorImageUrl,
+    lowStock: row.stockQuantity <= LOW_STOCK_THRESHOLD,
+  }));
 
   result.sort((a, b) => {
     if (a.lowStock !== b.lowStock) return a.lowStock ? -1 : 1;
@@ -53,7 +63,7 @@ export async function updateVariantStock(variantId, stockQuantity) {
   return {
     variantId: updated.id,
     productId: product.id,
-    productTitle: product.title,
+    productTitle: product ? product.name : '',
     size: updated.size,
     colorSlug: updated.colorSlug,
     colorName: updated.colorName,
