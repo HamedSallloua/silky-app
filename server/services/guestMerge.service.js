@@ -16,13 +16,7 @@ async function mergeCarts(userId, guestSessionId, tx) {
   const guestCart = await cartRepository.findCartByGuestSessionId(guestSessionId, tx);
   if (!guestCart) return;
 
-  const userCart = await cartRepository.findCartByUserId(userId, tx);
-
-  if (!userCart) {
-    await cartRepository.updateCartUserId(guestCart.id, userId, tx);
-    return;
-  }
-
+  const userCart = await cartRepository.findOrCreateCart({ userId }, tx);
   await cartRepository.mergeGuestItemsIntoUserCart(guestCart.id, userCart.id, tx);
 }
 

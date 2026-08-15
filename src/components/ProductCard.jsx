@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom';
 import ProductPrice from './ProductPrice';
+import ProductBadges from './ProductBadges';
 
 export default function ProductCard({ name, product, image, linkTo = '/product/1' }) {
   return (
     <div className="product_card">
       <Link to={linkTo} className="product_card_link">
         <div className="product_image_container">
+          <ProductBadges product={product} />
           <img src={image} alt={name} className="product_img" />
         </div>
         <div className="product_info">

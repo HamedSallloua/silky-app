@@ -24,7 +24,7 @@ router.post('/upload', admin, (req, res, next) => {
   });
 }, productsController.uploadImage);
 router.get('/:id/reviews', productsController.listReviews);
-router.post('/:id/reviews', authMiddleware, productsController.createReview);
+router.post('/:id/reviews', optionalAuthMiddleware, productsController.createReview);
 router.get('/:id/admin-reviews', admin, productsController.listAdminProductReviews);
 router.patch('/reviews/:id', admin, productsController.updateProductReview);
 router.delete('/reviews/:id', admin, productsController.removeProductReview);

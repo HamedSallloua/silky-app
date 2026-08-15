@@ -39,9 +39,7 @@ export default function LeaveReview() {
     }
 
     const trimmedEmail = (emailVal || '').trim();
-    if (!trimmedEmail) {
-      errors.email = "L'adresse e-mail est obligatoire.";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       errors.email = "Veuillez entrer une adresse e-mail valide.";
     }
 
@@ -153,7 +151,7 @@ export default function LeaveReview() {
 
             {!isAuthenticated && (
               <div className="form-group">
-                <label htmlFor="email">E-mail *</label>
+                <label htmlFor="email">E-mail (optionnel)</label>
                 <input
                   type="email"
                   id="email"

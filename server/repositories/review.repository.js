@@ -66,8 +66,8 @@ export const reviewRepository = {
       summary: buildRatingSummary(combined),
       gallery: galleryRows.map((g) => ({
         id: g.id,
-        src: g.src,
-        alt: g.alt || '',
+        src: g.imageUrl,
+        alt: g.altText || '',
         createdAt: g.createdAt instanceof Date ? g.createdAt.toISOString() : g.createdAt,
       })),
     };

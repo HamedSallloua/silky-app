@@ -180,6 +180,20 @@ async function main() {
     recordBug('Guest cart not merged on registration');
   }
 
+  // Verify repeated login does not duplicate cart item quantity
+  const loginAgain = await request('/auth/login', {
+    method: 'POST',
+    body: { email: email1, password: 'testpass123' },
+    cookieJar: guest1,
+  });
+  const cartAfterSecondLogin = await request('/cart', { token: loginAgain.data?.token });
+  const itemQty = cartAfterSecondLogin.data?.items?.[0]?.quantity;
+  if (itemQty === 2) {
+    pass('Repeated login does not duplicate cart item quantity', `qty: ${itemQty}`);
+  } else {
+    fail('Repeated login does not duplicate cart item quantity', `qty: ${itemQty} (expected 2)`);
+  }
+
   // Customer isolation - register another user
   const guest3 = { cookie: null, guestSessionId: crypto.randomUUID() };
   const email2 = uniqueEmail();
@@ -410,13 +424,12 @@ async function main() {
   // --- 9. Reviews ---
   const guestReview = await request(`/products/${productId}/reviews`, {
     method: 'POST',
-    body: { rating: 5, comment: 'Guest review attempt' },
+    body: { rating: 5, comment: 'Guest review attempt', authorName: 'Guest Reviewer' },
   });
-  if (guestReview.status === 401) {
-    pass('Guest cannot submit product review');
+  if (guestReview.status === 201) {
+    pass('Guest can submit product review');
   } else {
-    fail('Guest cannot submit product review', `status ${guestReview.status}`);
-    recordBug('Unauthenticated users can submit product reviews');
+    fail('Guest can submit product review', `status ${guestReview.status}`);
   }
 
   const authReview = await request(`/products/${productId}/reviews`, {

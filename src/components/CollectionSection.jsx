@@ -11,7 +11,7 @@ export default function CollectionSection({ title, image, products, viewAllHref 
           <ProductCard
             key={product.linkTo || `${product.name}-${index}`}
             name={product.name}
-            product={product.product}
+            product={product.product || product}
             image={product.image || image}
             linkTo={product.linkTo || `/product/${index + 1}`}
           />

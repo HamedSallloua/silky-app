@@ -17,6 +17,27 @@ export function getStockStatus(stock) {
   return { text: 'En stock', inStock: true };
 }
 
+export function isProductOutOfStock(product) {
+  if (!product) return false;
+
+  if (product.stock && typeof product.stock === 'object') {
+    const values = Object.values(product.stock);
+    if (values.length > 0) {
+      return values.every((qty) => Number(qty) <= 0);
+    }
+  }
+
+  if (Array.isArray(product.variants) && product.variants.length > 0) {
+    return product.variants.every((v) => Number(v.stockQuantity ?? v.stock ?? 0) <= 0);
+  }
+
+  if (product.stockQuantity !== undefined && product.stockQuantity !== null) {
+    return Number(product.stockQuantity) <= 0;
+  }
+
+  return false;
+}
+
 function slugify(text) {
   if (!text) return '';
   return String(text)

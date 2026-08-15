@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ProductReviewsSection from '../components/ProductReviewsSection';
 import ProductPrice from '../components/ProductPrice';
+import ProductBadges from '../components/ProductBadges';
 import { useCart } from '../context/CartContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { useProducts } from '../context/ProductsContext';
@@ -509,6 +510,7 @@ export default function Product() {
               <div key={rec.id} className="product_card">
                 <Link to={`/product/${rec.id}`} className="product_card_link">
                   <div className="product_card_img_wrapper">
+                    <ProductBadges product={rec} />
                     <img src={rec.collectionImage || rec.mainImage} alt={rec.name} className="product_card_img" />
                   </div>
                   <h3 className="product_card_title">{rec.name}</h3>

@@ -3,16 +3,14 @@ import { Link } from 'react-router-dom';
 export default function Footer() {
   const handleNavClick = (targetPath) => {
     const [, hash] = (targetPath || '').split('#');
-    setTimeout(() => {
-      if (hash) {
-        const element = document.getElementById(hash);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          return;
-        }
+    if (hash) {
+      const element = document.getElementById(hash);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
+    } else {
       window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
-    }, 10);
+    }
   };
 
   return (

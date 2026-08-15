@@ -55,9 +55,7 @@ export default function ProductReviewsSection({ productId }) {
     }
 
     const trimmedEmail = (emailVal || '').trim();
-    if (!trimmedEmail) {
-      errors.email = "L'adresse e-mail est obligatoire.";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       errors.email = "Veuillez entrer une adresse e-mail valide.";
     }
 
@@ -196,7 +194,7 @@ export default function ProductReviewsSection({ productId }) {
 
                 {!isAuthenticated && (
                   <div className="compact_form_group">
-                    <label htmlFor="product_review_email">Votre e-mail *</label>
+                    <label htmlFor="product_review_email">Votre e-mail (optionnel)</label>
                     <input
                       id="product_review_email"
                       type="email"

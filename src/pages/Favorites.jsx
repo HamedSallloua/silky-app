@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import ProductPrice from '../components/ProductPrice';
+import ProductBadges from '../components/ProductBadges';
 import { useCart } from '../context/CartContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { useProducts } from '../context/ProductsContext';
@@ -119,6 +120,7 @@ export default function Favorites() {
             return (
               <div key={product.id} className="product_card">
                 <div className="product_image_container" style={{ position: 'relative' }}>
+                  <ProductBadges product={product} className="fav_product_badges" />
                   <Link to={`/product/${product.id}`} className="product_card_link">
                     <img
                       src={product.collectionImage || product.mainImage}

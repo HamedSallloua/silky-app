@@ -100,6 +100,5 @@ export const favouriteRepository = {
       WHERE guest_session_id = ${guestSessionId}
       ON CONFLICT (user_id, product_id) WHERE user_id IS NOT NULL DO NOTHING
     `);
-    await tx.delete(favourites).where(eq(favourites.guestSessionId, guestSessionId));
   }
 };

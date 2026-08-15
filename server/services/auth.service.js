@@ -89,7 +89,7 @@ export async function loginUser({ identifier, email, password, guestSessionId })
   }
 
   const user = await userRepository.findByIdentifier(inputIdentifier);
-  if (!user) {
+  if (!user || user.role === 'admin') {
     throw new AppError('Connexion impossible. Identifiants incorrects.', 401);
   }
 

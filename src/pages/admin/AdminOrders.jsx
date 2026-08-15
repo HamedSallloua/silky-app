@@ -254,7 +254,7 @@ export default function AdminOrders({ refreshKey = 0, onOrderCreated }) {
                         Échange
                       </button>
                     )}
-                    {isUnconfirmed && (
+                    {!isCancelled && (
                       <button
                         type="button"
                         className="admin-btn-cancel"

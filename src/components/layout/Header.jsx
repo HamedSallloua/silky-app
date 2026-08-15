@@ -98,6 +98,14 @@ export default function Header() {
           <Link to="/leave-review" className="action_item reviews_item" title="Donner votre avis">
             <img src="/pictures/avis.png" alt="Avis clients" className="reviews_icon_img" />
           </Link>
+          <Link
+            to="/"
+            className="action_item"
+            onClick={() => window.scrollTo({ top: 0, left: 0, behavior: 'smooth' })}
+          >
+            <img src="/pictures/home.png" alt="Accueil" className="action_icon_img" />
+            <span>Accueil</span>
+          </Link>
           <Link to="/favorites" className="action_item">
             <img src="/pictures/heart.png" alt="Favoris" className="action_icon_img" />
             <span>Favoris</span>

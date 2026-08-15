@@ -123,9 +123,8 @@ export const cartRepository = {
       FROM cart_items
       WHERE cart_id = ${guestCartId}
       ON CONFLICT (cart_id, variant_id) DO UPDATE SET
-        quantity = cart_items.quantity + EXCLUDED.quantity,
+        quantity = GREATEST(cart_items.quantity, EXCLUDED.quantity),
         updated_at = NOW()
     `);
-    await this.deleteCart(guestCartId, tx);
   }
 };

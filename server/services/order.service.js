@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { orderRepository } from '../repositories/order.repository.js';
+import { exchangeRepository } from '../repositories/exchange.repository.js';
 import { productRepository } from '../repositories/product.repository.js';
 import { themeRepository } from '../repositories/theme.repository.js';
 import { getCartItemsForCheckout, clearCart } from './cart.service.js';
@@ -218,21 +219,34 @@ export async function cancelOrder(orderId) {
       throw new AppError('La commande est déjà annulée', 400);
     }
 
-    if (!['pending', 'processing'].includes(lockedOrder.status)) {
-      throw new AppError(`Impossible d'annuler une commande avec le statut "${lockedOrder.status}"`, 400);
+    const latestExchange = await exchangeRepository.findLatestExchange(orderId, tx);
+
+    let itemsToRestore = [];
+    if (latestExchange && latestExchange.items && latestExchange.items.length > 0) {
+      itemsToRestore = latestExchange.items;
+    } else {
+      const order = await orderRepository.findById(orderId, tx);
+      itemsToRestore = order ? order.items || [] : [];
     }
 
-    const order = await orderRepository.findById(orderId, tx);
-    const variantIds = (order.items || []).map((i) => i.variantId).filter(Boolean);
+    const quantityByVariant = new Map();
+    for (const item of itemsToRestore) {
+      if (item.variantId && Number(item.quantity) > 0) {
+        quantityByVariant.set(
+          item.variantId,
+          (quantityByVariant.get(item.variantId) || 0) + Number(item.quantity)
+        );
+      }
+    }
+
+    const variantIds = Array.from(quantityByVariant.keys());
 
     if (variantIds.length > 0) {
       await orderRepository.lockVariantsForUpdate(variantIds, tx);
-      for (const item of order.items) {
-        if (item.variantId) {
-          const variant = await productRepository.findVariantById(item.variantId, tx);
-          if (variant) {
-            await productRepository.updateVariantStock(variant.id, variant.stockQuantity + item.quantity, tx);
-          }
+      for (const [variantId, qty] of quantityByVariant.entries()) {
+        const variant = await productRepository.findVariantById(variantId, tx);
+        if (variant) {
+          await productRepository.updateVariantStock(variant.id, variant.stockQuantity + qty, tx);
         }
       }
     }
