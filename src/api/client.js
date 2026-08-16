@@ -275,7 +275,7 @@ export const api = {
 
 
 
-  checkout: (customer) => request('/orders/checkout', { method: 'POST', body: { customer } }),
+  checkout: (customer, buyNowItem) => request('/orders/checkout', { method: 'POST', body: { customer, buyNowItem } }),
 
   createProduct: (product) => request('/products', { method: 'POST', body: product }),
 
@@ -327,5 +327,19 @@ export const api = {
 
   deleteGalleryItem: (id) => request(`/gallery/${id}`, { method: 'DELETE' }),
 
+
+
+  // Contact messages
+
+  submitContactMessage: (data) => request('/contact', { method: 'POST', body: data }),
+
+  getContactMessages: () => request('/contact'),
+
+  getContactMessage: (id) => request(`/contact/${id}`),
+
+  sendContactReply: (id, data) => request(`/contact/${id}/reply`, { method: 'POST', body: data }),
+
 };
+
+
 

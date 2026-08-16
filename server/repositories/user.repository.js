@@ -68,13 +68,19 @@ export const userRepository = {
     return newUser;
   },
 
-  async updateProfile(id, { fullName, phoneNumber }, tx = db) {
+  async updateProfile(id, { fullName, phoneNumber, email }, tx = db) {
+    const updateData = {
+      fullName,
+      updatedAt: new Date(),
+    };
+    if (phoneNumber !== undefined) {
+      updateData.phoneNumber = phoneNumber || null;
+    }
+    if (email !== undefined) {
+      updateData.email = email ? email.toLowerCase().trim() : null;
+    }
     const [updated] = await tx.update(users)
-      .set({
-        fullName,
-        phoneNumber: phoneNumber || null,
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(eq(users.id, id))
       .returning({
         id: users.id,

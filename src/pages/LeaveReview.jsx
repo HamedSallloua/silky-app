@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import ReviewsSection from '../components/ReviewsSection';
 import '../styles/reviews-page.css';
 
 export default function LeaveReview() {
@@ -94,114 +95,121 @@ export default function LeaveReview() {
 
   if (isAdmin) {
     return (
+      <>
+        <main className="reviews-page">
+          <section className="reviews-page-section">
+            <div className="reviews-page-header">
+              <img src="/pictures/avis.png" alt="Avis clients Silky" className="reviews-page-logo" />
+              <h1>Donner votre avis</h1>
+              <p className="reviews-page-error" style={{ fontSize: 16, marginTop: 24 }}>
+                Les administrateurs ne peuvent pas soumettre d&apos;avis client.
+              </p>
+              <Link to="/admin" className="reviews-page-link" style={{ display: 'inline-block', marginTop: 20 }}>
+                Retour au panneau d&apos;administration
+              </Link>
+            </div>
+          </section>
+        </main>
+        <ReviewsSection layout="leave-review" />
+      </>
+    );
+  }
+
+  return (
+    <>
       <main className="reviews-page">
         <section className="reviews-page-section">
           <div className="reviews-page-header">
             <img src="/pictures/avis.png" alt="Avis clients Silky" className="reviews-page-logo" />
             <h1>Donner votre avis</h1>
-            <p className="reviews-page-error" style={{ fontSize: 16, marginTop: 24 }}>
-              Les administrateurs ne peuvent pas soumettre d&apos;avis client.
-            </p>
-            <Link to="/admin" className="reviews-page-link" style={{ display: 'inline-block', marginTop: 20 }}>
-              Retour au panneau d&apos;administration
-            </Link>
+            <p>Partagez votre expérience Silky. Votre avis sera publié après validation par notre équipe.</p>
           </div>
+
+          {success ? (
+            <div className="reviews-page-success">
+              <h2>Merci!</h2>
+              <p>Votre avis a été envoyé et sera visible après approbation.</p>
+              <button type="button" className="reviews-page-btn" onClick={() => setSuccess(false)}>
+                Envoyer un autre avis
+              </button>
+              <Link to="/" className="reviews-page-link">
+                Retour à l&apos;accueil
+              </Link>
+            </div>
+          ) : (
+            <form className="reviews-page-form" onSubmit={handleSubmit} noValidate>
+              {!isAuthenticated && (
+                <div className="form-group">
+                  <label htmlFor="authorName">Votre nom *</label>
+                  <input
+                    id="authorName"
+                    name="authorName"
+                    value={form.authorName}
+                    onChange={handleChange}
+                    className={fieldErrors.authorName ? 'input-error' : ''}
+                  />
+                  {fieldErrors.authorName && (
+                    <span className="field-error-msg">{fieldErrors.authorName}</span>
+                  )}
+                </div>
+              )}
+
+              {!isAuthenticated && (
+                <div className="form-group">
+                  <label htmlFor="email">E-mail (optionnel)</label>
+                  <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    value={form.email}
+                    onChange={handleChange}
+                    className={fieldErrors.email ? 'input-error' : ''}
+                  />
+                  {fieldErrors.email && (
+                    <span className="field-error-msg">{fieldErrors.email}</span>
+                  )}
+                </div>
+              )}
+
+              <div className="form-group">
+                <label htmlFor="rating">Note</label>
+                <select id="rating" name="rating" value={form.rating} onChange={handleChange}>
+                  {[5, 4, 3, 2, 1].map((n) => (
+                    <option key={n} value={n}>
+                      {n} / 5
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="body">Votre avis *</label>
+                <textarea
+                  id="body"
+                  name="body"
+                  rows={6}
+                  value={form.body}
+                  onChange={handleChange}
+                  placeholder="Décrivez votre expérience avec Silky..."
+                  className={fieldErrors.body ? 'input-error' : ''}
+                />
+                {fieldErrors.body && (
+                  <span className="field-error-msg">{fieldErrors.body}</span>
+                )}
+              </div>
+
+              {error && <p className="reviews-page-error">{error}</p>}
+
+              <button type="submit" className="reviews-page-btn" disabled={submitting}>
+                {submitting ? 'Envoi...' : 'Envoyer mon avis'}
+              </button>
+            </form>
+          )}
         </section>
       </main>
-    );
-  }
 
-  return (
-    <main className="reviews-page">
-      <section className="reviews-page-section">
-        <div className="reviews-page-header">
-          <img src="/pictures/avis.png" alt="Avis clients Silky" className="reviews-page-logo" />
-          <h1>Donner votre avis</h1>
-          <p>Partagez votre expérience Silky. Votre avis sera publié après validation par notre équipe.</p>
-        </div>
-
-        {success ? (
-          <div className="reviews-page-success">
-            <h2>Merci!</h2>
-            <p>Votre avis a été envoyé et sera visible après approbation.</p>
-            <button type="button" className="reviews-page-btn" onClick={() => setSuccess(false)}>
-              Envoyer un autre avis
-            </button>
-            <Link to="/" className="reviews-page-link">
-              Retour à l&apos;accueil
-            </Link>
-          </div>
-        ) : (
-          <form className="reviews-page-form" onSubmit={handleSubmit} noValidate>
-            {!isAuthenticated && (
-              <div className="form-group">
-                <label htmlFor="authorName">Votre nom *</label>
-                <input
-                  id="authorName"
-                  name="authorName"
-                  value={form.authorName}
-                  onChange={handleChange}
-                  className={fieldErrors.authorName ? 'input-error' : ''}
-                />
-                {fieldErrors.authorName && (
-                  <span className="field-error-msg">{fieldErrors.authorName}</span>
-                )}
-              </div>
-            )}
-
-            {!isAuthenticated && (
-              <div className="form-group">
-                <label htmlFor="email">E-mail (optionnel)</label>
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  value={form.email}
-                  onChange={handleChange}
-                  className={fieldErrors.email ? 'input-error' : ''}
-                />
-                {fieldErrors.email && (
-                  <span className="field-error-msg">{fieldErrors.email}</span>
-                )}
-              </div>
-            )}
-
-            <div className="form-group">
-              <label htmlFor="rating">Note</label>
-              <select id="rating" name="rating" value={form.rating} onChange={handleChange}>
-                {[5, 4, 3, 2, 1].map((n) => (
-                  <option key={n} value={n}>
-                    {n} / 5
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="body">Votre avis *</label>
-              <textarea
-                id="body"
-                name="body"
-                rows={6}
-                value={form.body}
-                onChange={handleChange}
-                placeholder="Décrivez votre expérience avec Silky..."
-                className={fieldErrors.body ? 'input-error' : ''}
-              />
-              {fieldErrors.body && (
-                <span className="field-error-msg">{fieldErrors.body}</span>
-              )}
-            </div>
-
-            {error && <p className="reviews-page-error">{error}</p>}
-
-            <button type="submit" className="reviews-page-btn" disabled={submitting}>
-              {submitting ? 'Envoi...' : 'Envoyer mon avis'}
-            </button>
-          </form>
-        )}
-      </section>
-    </main>
+      <ReviewsSection layout="leave-review" />
+    </>
   );
 }
 

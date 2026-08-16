@@ -147,9 +147,6 @@ export default function Checkout() {
       await refreshCart();
       await refreshProducts();
       navigate('/order-confirmation', { state: { order } });
-      await refreshCart();
-      await refreshProducts();
-      navigate('/order-confirmation', { state: { order } });
     } catch (err) {
       setError(err.message || 'Impossible de finaliser la commande');
     } finally {

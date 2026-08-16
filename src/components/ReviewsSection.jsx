@@ -5,7 +5,7 @@ import InfiniteMarquee from './InfiniteMarquee';
 import { calculateRatingSummary } from '../utils/ratings';
 import '../styles/reviews.css';
 
-export default function ReviewsSection({ ratingText }) {
+export default function ReviewsSection({ ratingText, layout = 'default' }) {
   const [gallery, setGallery] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [ratingSummary, setRatingSummary] = useState(null);
@@ -45,7 +45,7 @@ export default function ReviewsSection({ ratingText }) {
       <>
         <strong>{average}/5 {label}</strong>
         <br />
-        {count} avis{count > 1 ? 's' : ''}
+        {count} avis
       </>
     );
   };
@@ -54,23 +54,27 @@ export default function ReviewsSection({ ratingText }) {
   const reviewsToRender = reviews.slice(0, 15);
 
   return (
-    <section className="reviews_section">
-      <div className="reviews_header">
-        <div className="rating_summary">{renderRatingSummary()}</div>
+    <section className={`reviews_section${layout === 'leave-review' ? ' reviews_section_leave_page' : ''}`}>
+      {layout === 'leave-review' ? (
+        <div className="rating_summary rating_summary_centered">{renderRatingSummary()}</div>
+      ) : (
+        <div className="reviews_header">
+          <div className="rating_summary">{renderRatingSummary()}</div>
 
-        <div className="reviews_title_container">
-          <h2 className="reviews_title">AVIS CLIENT</h2>
-          <Link to="/leave-review" className="reviews_logo_link">
-            <img src="/pictures/avis.png" alt="Avis clients Silky" className="reviews_main_img" />
-          </Link>
-        </div>
+          <div className="reviews_title_container">
+            <h2 className="reviews_title">AVIS CLIENT</h2>
+            <Link to="/leave-review" className="reviews_logo_link">
+              <img src="/pictures/avis.png" alt="Avis clients Silky" className="reviews_main_img" />
+            </Link>
+          </div>
 
-        <div className="leave_review_container">
-          <Link to="/leave-review" className="leave_review_link">
-            Donner votre avis et évaluez votre expérience Silky
-          </Link>
+          <div className="leave_review_container">
+            <Link to="/leave-review" className="leave_review_link">
+              Donner votre avis et évaluez votre expérience Silky
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="reviews_content_grid">
         {galleryItemsToRender.length > 0 && (

@@ -8,6 +8,7 @@ import galleryRoutes from './gallery.routes.js';
 import themeRoutes from './theme.routes.js';
 import cartRoutes from './cart.routes.js';
 import favouritesRoutes from './favourites.routes.js';
+import contactRoutes from './contact.routes.js';
 
 const router = Router();
 
@@ -20,5 +21,7 @@ router.use('/gallery', galleryRoutes);
 router.use('/theme', themeRoutes);
 router.use('/cart', cartRoutes);
 router.use('/favourites', favouritesRoutes);
+router.use('/contact', contactRoutes);
+
 
 export default router;

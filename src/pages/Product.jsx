@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import ProductReviewsSection from '../components/ProductReviewsSection';
 import ProductPrice from '../components/ProductPrice';
 import ProductBadges from '../components/ProductBadges';
+import BuyNowModal from '../components/BuyNowModal';
 import { useCart } from '../context/CartContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { useProducts } from '../context/ProductsContext';
@@ -28,6 +29,8 @@ export default function Product() {
   const [shareOpen, setShareOpen] = useState(false);
   const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
   const [isZoomed, setIsZoomed] = useState(false);
+  const [buyNowModalOpen, setBuyNowModalOpen] = useState(false);
+  const [buyNowItem, setBuyNowItem] = useState(null);
 
   const verticalTrackRef = useRef(null);
   const colorTrackRef = useRef(null);
@@ -216,18 +219,24 @@ export default function Product() {
     }
   };
 
-  const handleCommander = async () => {
+  const handleCommander = () => {
     if (isAdmin) {
       setCartMessage('Les administrateurs ne peuvent pas passer de commandes.');
       return;
     }
     if (!product || !validateSelection()) return;
-    try {
-      await addItem(buildCartItem());
-      navigate('/checkout');
-    } catch (err) {
-      setCartMessage(err.message || 'Impossible d\'ajouter au panier.');
-    }
+    setBuyNowItem({
+      productId: product.id,
+      colorId: selectedColor?.id ?? null,
+      colorName: selectedColor?.name ?? '',
+      size: selectedSize ?? null,
+      quantity,
+      name: product.name,
+      price: getEffectivePrice(product),
+      image: mainImage || product.mainImage,
+      details: buildDetails(),
+    });
+    setBuyNowModalOpen(true);
   };
 
   if (loading) {
@@ -529,6 +538,12 @@ export default function Product() {
           </div>
         </section>
       )}
+
+      <BuyNowModal
+        isOpen={buyNowModalOpen}
+        onClose={() => setBuyNowModalOpen(false)}
+        buyNowItem={buyNowItem}
+      />
     </>
   );
 }

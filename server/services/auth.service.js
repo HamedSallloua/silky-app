@@ -6,7 +6,7 @@ import { mergeGuestSessionIntoUser } from './guestMerge.service.js';
 import { signAccessToken } from './token.service.js';
 import { AppError } from '../utils/errors.js';
 import { env } from '../config/env.js';
-import { sendPasswordResetEmail } from './email.service.js';
+import { sendPasswordResetEmail, sendWelcomeEmail } from './email.service.js';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -77,6 +77,12 @@ export async function registerUser({ identifier, email, password, fullName, phon
     await mergeGuestSessionIntoUser(created.id, guestSessionId, tx);
     return created;
   });
+
+  if (user.email) {
+    sendWelcomeEmail(user.email, user.fullName).catch((emailErr) => {
+      console.error('[email] Failed to send welcome email:', emailErr.message);
+    });
+  }
 
   const token = signAccessToken(user);
   return buildAuthResponse(user, token);
@@ -173,18 +179,77 @@ export async function resetPassword({ token, newPassword }) {
   return { message: 'Password updated successfully' };
 }
 
-export async function updateProfile(userId, { fullName, phoneNumber }) {
+export async function updateProfile(userId, { fullName, phoneNumber, email }) {
+  const currentUser = await userRepository.findById(userId);
+  if (!currentUser) {
+    throw new AppError('Utilisateur non trouvé', 404);
+  }
+
   if (!fullName?.trim()) {
-    throw new AppError('Full name is required', 400);
+    throw new AppError('Le nom complet est requis', 400);
+  }
+
+  const currentEmail = currentUser.email ? currentUser.email.trim().toLowerCase() : null;
+  const hasSubmittedEmail = email !== undefined && email !== null;
+  const cleanSubmittedEmail = hasSubmittedEmail ? email.trim().toLowerCase() : undefined;
+
+  let finalEmail = currentEmail;
+
+  if (currentEmail !== null) {
+    // User already has an email — strictly forbidden from clearing or saving empty email
+    if (hasSubmittedEmail && !cleanSubmittedEmail) {
+      throw new AppError("L'adresse e-mail est obligatoire.", 400);
+    }
+    if (hasSubmittedEmail && cleanSubmittedEmail !== currentEmail) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanSubmittedEmail)) {
+        throw new AppError('Veuillez entrer une adresse e-mail valide.', 400);
+      }
+      const existingUser = await userRepository.findByEmail(cleanSubmittedEmail);
+      if (existingUser && existingUser.id !== userId) {
+        throw new AppError('Un compte avec cette adresse e-mail existe déjà', 409);
+      }
+      finalEmail = cleanSubmittedEmail;
+    }
+  } else {
+    // Phone-only user — can add an email or keep it empty
+    if (hasSubmittedEmail && cleanSubmittedEmail) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanSubmittedEmail)) {
+        throw new AppError('Veuillez entrer une adresse e-mail valide.', 400);
+      }
+      const existingUser = await userRepository.findByEmail(cleanSubmittedEmail);
+      if (existingUser && existingUser.id !== userId) {
+        throw new AppError('Un compte avec cette adresse e-mail existe déjà', 409);
+      }
+      finalEmail = cleanSubmittedEmail;
+    } else {
+      finalEmail = null;
+    }
+  }
+
+  let finalPhone = currentUser.phoneNumber ?? null;
+  if (phoneNumber !== undefined) {
+    const cleanPhone = phoneNumber ? phoneNumber.trim() : null;
+    if (cleanPhone) {
+      if (cleanPhone !== currentUser.phoneNumber) {
+        const existingPhoneUser = await userRepository.findByIdentifier(cleanPhone);
+        if (existingPhoneUser && existingPhoneUser.id !== userId) {
+          throw new AppError('Un compte avec ce numéro de téléphone existe déjà', 409);
+        }
+      }
+      finalPhone = cleanPhone;
+    } else {
+      finalPhone = null;
+    }
   }
 
   const updated = await userRepository.updateProfile(userId, {
     fullName: fullName.trim(),
-    phoneNumber: phoneNumber?.trim() || null,
+    phoneNumber: finalPhone,
+    email: finalEmail,
   });
 
   if (!updated) {
-    throw new AppError('User not found', 404);
+    throw new AppError('Utilisateur non trouvé', 404);
   }
 
   return { user: sanitizeUser(updated) };

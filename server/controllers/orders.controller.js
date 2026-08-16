@@ -63,7 +63,15 @@ export async function checkout(req, res) {
 
   try {
     const shopper = requireShopper(req);
-    const order = await orderService.checkoutFromCart({ customer, shopper });
+    const buyNowItem = req.body.buyNowItem;
+
+    let order;
+    if (buyNowItem) {
+      order = await orderService.checkoutDirect({ customer, shopper, item: buyNowItem });
+    } else {
+      order = await orderService.checkoutFromCart({ customer, shopper });
+    }
+
     res.status(201).json(order);
   } catch (err) {
     sendError(res, err);

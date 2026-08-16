@@ -71,8 +71,8 @@ export async function me(req, res) {
 
 export async function updateProfile(req, res) {
   try {
-    const { fullName, phoneNumber } = req.body;
-    const result = await authService.updateProfile(req.user.id, { fullName, phoneNumber });
+    const { fullName, phoneNumber, email } = req.body;
+    const result = await authService.updateProfile(req.user.id, { fullName, phoneNumber, email });
     res.json(result);
   } catch (err) {
     sendError(res, err);

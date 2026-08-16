@@ -71,14 +71,34 @@ export default function Account() {
     e.preventDefault();
     setProfileError('');
     setProfileSuccess('');
-    setProfileLoading(true);
 
     const form = new FormData(e.target);
+    const fullName = (form.get('fullName') || '').trim();
+    const email = (form.get('email') || '').trim();
+    const phoneNumber = (form.get('phoneNumber') || '').trim();
+
+    if (!fullName) {
+      setProfileError('Le nom complet est requis');
+      return;
+    }
+
+    if (user?.email && !email) {
+      setProfileError("L'adresse e-mail est obligatoire.");
+      return;
+    }
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setProfileError('Veuillez entrer une adresse e-mail valide.');
+      return;
+    }
+
+    setProfileLoading(true);
 
     try {
       await api.updateProfile({
-        fullName: form.get('fullName'),
-        phoneNumber: form.get('phoneNumber') || null,
+        fullName,
+        email: email || null,
+        phoneNumber: phoneNumber || null,
       });
       await refreshUser();
       setProfileSuccess('Profil mis à jour.');
@@ -189,7 +209,7 @@ export default function Account() {
             </div>
           </>
         ) : (
-          <form className="account-form" onSubmit={handleProfileSubmit}>
+          <form className="account-form" onSubmit={handleProfileSubmit} noValidate>
             <div className="form-group">
               <label htmlFor="fullName">Nom complet</label>
               <input
@@ -199,6 +219,18 @@ export default function Account() {
                 required
                 defaultValue={user?.fullName || ''}
                 autoComplete="name"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="email">
+                Adresse e-mail {user?.email ? '' : '(optionnel)'}
+              </label>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                defaultValue={user?.email || ''}
+                autoComplete="email"
               />
             </div>
             <div className="form-group">

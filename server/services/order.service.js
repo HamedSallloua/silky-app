@@ -3,9 +3,69 @@ import { orderRepository } from '../repositories/order.repository.js';
 import { exchangeRepository } from '../repositories/exchange.repository.js';
 import { productRepository } from '../repositories/product.repository.js';
 import { themeRepository } from '../repositories/theme.repository.js';
+import { emailDeliveryRepository } from '../repositories/email-delivery.repository.js';
 import { getCartItemsForCheckout, clearCart } from './cart.service.js';
 import { runInTransaction } from '../repositories/transaction.repository.js';
 import { AppError } from '../utils/errors.js';
+import { sendOrderConfirmationEmail } from './email.service.js';
+
+const EMAIL_TYPE_ORDER_CONFIRMATION = 'order_confirmation';
+
+/**
+ * Dispatch an order-confirmation email with PostgreSQL-backed idempotency.
+ *
+ * Guarantee: exactly 1 email per (order_id, 'order_confirmation') pair,
+ * enforced by the UNIQUE constraint on order_email_deliveries.
+ *
+ * Steps:
+ *   1. Skip silently if the order has no customer email address.
+ *   2. INSERT a delivery record (ON CONFLICT DO NOTHING).
+ *   3. If insert returned 0 rows → another process already claimed it → skip.
+ *   4. If insert succeeded → we own the dispatch → call sendOrderConfirmationEmail.
+ *   5. On success → mark the row 'sent'.
+ *   6. On failure → mark the row 'failed' (safely retryable by deleting the row).
+ *
+ * This function never throws. Email failures are logged and do NOT affect the
+ * already-committed order transaction.
+ *
+ * @param {object} order - Full formatted order object returned by the repository.
+ */
+export async function dispatchOrderConfirmationEmail(order) {
+  if (!order?.id) return;
+  const customerEmail = (order.customer?.email || order.customerEmail || '').trim();
+  if (!customerEmail) return;
+
+  let delivery = null;
+  try {
+    // Claim the dispatch slot — atomic at the DB level
+    delivery = await emailDeliveryRepository.claimDelivery(
+      order.id,
+      EMAIL_TYPE_ORDER_CONFIRMATION
+    );
+
+    if (!delivery) {
+      // Another process (or a previous call in the same process) already claimed
+      // the dispatch for this order. Skip without sending.
+      console.log(
+        `[email] Order confirmation already claimed for order ${order.id} — skipping.`
+      );
+      return;
+    }
+
+    // We own the slot — send the email
+    await sendOrderConfirmationEmail(order);
+    await emailDeliveryRepository.markSent(delivery.id);
+  } catch (err) {
+    console.error('[email] Failed to send order confirmation email:', err.message);
+    if (delivery?.id) {
+      try {
+        await emailDeliveryRepository.markFailed(delivery.id, err.message);
+      } catch (updateErr) {
+        console.error('[email] Failed to mark delivery as failed:', updateErr.message);
+      }
+    }
+  }
+}
 
 function generateOrderNumber() {
   const ts = Date.now().toString(36).toUpperCase();
@@ -46,7 +106,14 @@ function extractCustomerInfo(customer) {
   return { name, phone, email, address };
 }
 
-export async function createOrder({ customer, items, userId = null, orderSource = 'web', deliveryFee: customDeliveryFee = null, orderNumber: customOrderNumber = null }) {
+export async function createOrder({
+  customer,
+  items,
+  userId = null,
+  orderSource = 'web',
+  deliveryFee: customDeliveryFee = null,
+  orderNumber: customOrderNumber = null,
+}) {
   const custInfo = extractCustomerInfo(customer);
   if (!custInfo.name || !custInfo.phone || !custInfo.address) {
     throw new AppError('Les informations client (nom, téléphone, adresse) sont requises', 400);
@@ -55,7 +122,7 @@ export async function createOrder({ customer, items, userId = null, orderSource 
     throw new AppError('La commande doit contenir au moins un article', 400);
   }
 
-  return runInTransaction(async (tx) => {
+  const order = await runInTransaction(async (tx) => {
     // Collect all variant IDs to lock
     const variantIds = items.map((i) => i.variantId).filter(Boolean);
     if (variantIds.length > 0) {
@@ -116,7 +183,7 @@ export async function createOrder({ customer, items, userId = null, orderSource 
     const totalAmount = subtotal + deliveryFee;
     const orderNumber = customOrderNumber || generateOrderNumber();
 
-    const order = await orderRepository.createOrder({
+    const createdOrder = await orderRepository.createOrder({
       orderNumber,
       userId,
       customerName: custInfo.name,
@@ -130,8 +197,11 @@ export async function createOrder({ customer, items, userId = null, orderSource 
       status: 'pending',
     }, validatedItems, tx);
 
-    return order;
+    return createdOrder;
   });
+
+  dispatchOrderConfirmationEmail(order);
+  return order;
 }
 
 export async function checkoutFromCart({ customer, shopper }) {
@@ -140,7 +210,7 @@ export async function checkoutFromCart({ customer, shopper }) {
     throw new AppError('Les informations client (nom, téléphone, adresse) sont requises', 400);
   }
 
-  return runInTransaction(async (tx) => {
+  const order = await runInTransaction(async (tx) => {
     const { cartId, items } = await getCartItemsForCheckout(shopper, tx);
     if (!items.length) {
       throw new AppError('Votre panier est vide', 400);
@@ -187,7 +257,7 @@ export async function checkoutFromCart({ customer, shopper }) {
     const totalAmount = subtotal + deliveryFee;
     const orderNumber = generateOrderNumber();
 
-    const order = await orderRepository.createOrder({
+    const createdOrder = await orderRepository.createOrder({
       orderNumber,
       userId: shopper.userId || null,
       guestSessionId: shopper.guestSessionId || null,
@@ -204,8 +274,101 @@ export async function checkoutFromCart({ customer, shopper }) {
 
     await clearCart(cartId, tx);
 
-    return order;
+    return createdOrder;
   });
+
+  dispatchOrderConfirmationEmail(order);
+  return order;
+}
+
+function buildVariantLabel(colorName, size) {
+  const parts = [];
+  if (colorName) parts.push(colorName);
+  if (size) parts.push(`Taille ${size}`);
+  return parts.join(' · ') || 'Standard';
+}
+
+export async function checkoutDirect({ customer, shopper, item }) {
+  const custInfo = extractCustomerInfo(customer);
+  if (!custInfo.name || !custInfo.phone || !custInfo.address) {
+    throw new AppError('Les informations client (nom, téléphone, adresse) sont requises', 400);
+  }
+
+  if (!item || !item.productId || !item.size) {
+    throw new AppError('Article invalide pour achat direct', 400);
+  }
+
+  const quantity = Math.max(1, Math.floor(Number(item.quantity)) || 1);
+
+  const order = await runInTransaction(async (tx) => {
+    let variant = null;
+    if (item.variantId) {
+      variant = await productRepository.findVariantById(item.variantId, tx);
+    } else {
+      variant = await productRepository.findVariantForOrderItem(item.productId, item.colorId, item.size, tx);
+    }
+
+    if (!variant) {
+      throw new AppError('Article non trouvé', 404);
+    }
+
+    const product = await productRepository.findById(variant.productId, tx);
+    if (!product || !product.is_active) {
+      throw new AppError('Produit non disponible', 400);
+    }
+
+    await orderRepository.lockVariantsForUpdate([variant.id], tx);
+
+    const lockedVariant = await productRepository.findVariantById(variant.id, tx);
+    if (!lockedVariant || lockedVariant.stockQuantity < quantity) {
+      throw new AppError(
+        `${product.name}: stock insuffisant (${lockedVariant?.stockQuantity ?? 0} disponible(s))`,
+        400
+      );
+    }
+
+    // Authoritative unit price directly from DB
+    const unitPrice = parseFloat(product.price) - parseFloat(product.discount || 0);
+    const subtotal = unitPrice * quantity;
+
+    // Deduct variant stock
+    await productRepository.updateVariantStock(variant.id, lockedVariant.stockQuantity - quantity, tx);
+
+    const validatedItems = [{
+      variantId: variant.id,
+      name: product.name,
+      variantLabel: buildVariantLabel(variant.colorName, variant.size),
+      image: variant.colorImageUrl || product.collectionImage || product.mainImage || null,
+      quantity,
+      price: unitPrice,
+    }];
+
+    const deliveryFee = await themeRepository.getDeliveryFee(tx);
+    const totalAmount = subtotal + deliveryFee;
+    const orderNumber = generateOrderNumber();
+
+    const createdOrder = await orderRepository.createOrder({
+      orderNumber,
+      userId: shopper?.userId || null,
+      guestSessionId: shopper?.guestSessionId || null,
+      customerName: custInfo.name,
+      customerEmail: custInfo.email,
+      customerPhone: custInfo.phone,
+      shippingAddress: custInfo.address,
+      subtotal,
+      deliveryFee,
+      totalAmount,
+      orderSource: 'web',
+      status: 'pending',
+    }, validatedItems, tx);
+
+    // Persistent cart is left completely untouched
+
+    return createdOrder;
+  });
+
+  dispatchOrderConfirmationEmail(order);
+  return order;
 }
 
 export async function cancelOrder(orderId) {

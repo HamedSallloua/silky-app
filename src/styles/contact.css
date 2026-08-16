@@ -87,6 +87,34 @@
   min-height: 140px;
 }
 
+.field-error-msg {
+  color: #b00020;
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-top: 2px;
+  display: block;
+}
+
+.form-group input.input-error,
+.form-group textarea.input-error {
+  border-color: #b00020;
+}
+
+.form-error {
+  color: #b91c1c;
+  font-size: 0.9rem;
+  margin: 0;
+  text-align: center;
+}
+
+.form-success {
+  color: #166534;
+  font-size: 0.9rem;
+  margin: 0;
+  text-align: center;
+}
+
+
 /* Button Container & Button Styling */
 .form-actions {
   display: flex;

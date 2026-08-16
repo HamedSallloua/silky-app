@@ -250,6 +250,19 @@ CREATE TABLE exchange_items (
 CREATE INDEX idx_exchange_items_exchange_id ON exchange_items (exchange_id);
 CREATE INDEX idx_exchange_items_variant_id ON exchange_items (variant_id);
 
+CREATE TABLE order_email_deliveries (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id      UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  email_type    VARCHAR(64) NOT NULL,
+  status        VARCHAR(16) NOT NULL DEFAULT 'pending',
+  error_message TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sent_at       TIMESTAMPTZ,
+  CONSTRAINT uq_order_email_deliveries_order_type UNIQUE (order_id, email_type)
+);
+
+CREATE INDEX idx_order_email_deliveries_order_id ON order_email_deliveries (order_id);
+
 -- ---------------------------------------------------------------------------
 -- Product reviews (per product)
 -- ---------------------------------------------------------------------------
@@ -295,6 +308,25 @@ CREATE TABLE review_gallery (
   alt_text   VARCHAR(255) NOT NULL DEFAULT 'Avis client',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ---------------------------------------------------------------------------
+-- Contact messages submitted via Contact Us page
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE contact_messages (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID REFERENCES users(id) ON DELETE SET NULL,
+  first_name VARCHAR(255) NOT NULL,
+  last_name  VARCHAR(255) NOT NULL,
+  email      VARCHAR(255) NOT NULL,
+  message    TEXT NOT NULL,
+  status     VARCHAR(32) NOT NULL DEFAULT 'pending',
+  replied_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_contact_messages_created_at ON contact_messages (created_at DESC);
+
 
 -- ---------------------------------------------------------------------------
 -- Site theme (replaces theme.json)

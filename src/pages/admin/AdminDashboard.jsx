@@ -8,6 +8,7 @@ import AdminReviews from './AdminReviews';
 import AdminProducts from './AdminProducts';
 import AdminInventory from './AdminInventory';
 import AdminAnalytics from './AdminAnalytics';
+import AdminMessages from './AdminMessages';
 import '../../styles/admin.css';
 
 const TABS = [
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'theme', label: 'Thèmes' },
   { id: 'orders', label: 'Commandes' },
   { id: 'reviews', label: 'Avis clients' },
+  { id: 'messages', label: 'Messages' },
 ];
 
 export default function AdminDashboard() {
@@ -262,6 +264,7 @@ export default function AdminDashboard() {
           <AdminOrders refreshKey={adminRefreshKey} onOrderCreated={handleAdminDataRefresh} />
         )}
         {tab === 'reviews' && <AdminReviews />}
+        {tab === 'messages' && <AdminMessages />}
         </div>
       </div>
     </div>

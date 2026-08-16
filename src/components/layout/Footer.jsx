@@ -88,7 +88,7 @@ export default function Footer() {
 
       <div className="footer_copyright">
         <p>
-          &copy; 2026 Silky Tunisia
+          &copy; 2026 Silky
           {' · by '}
           <a
             href="https://github.com/HamedSallloua"

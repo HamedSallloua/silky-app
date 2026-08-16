@@ -6,6 +6,19 @@ import * as exchangeService from '../services/exchange.service.js';
 import * as inventoryService from '../services/inventory.service.js';
 import * as analyticsService from '../services/analytics.service.js';
 import * as adminService from '../services/admin.service.js';
+import { emailDeliveryRepository } from '../repositories/email-delivery.repository.js';
+
+async function waitForOrderEmailDelivery(orderId, maxWaitMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const row = await emailDeliveryRepository.findByOrderAndType(orderId, 'order_confirmation');
+    if (row && (row.status === 'sent' || row.status === 'failed')) {
+      return row;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return emailDeliveryRepository.findByOrderAndType(orderId, 'order_confirmation');
+}
 
 async function runEdgeCaseTests() {
   console.log('====================================================');
@@ -216,6 +229,9 @@ async function runEdgeCaseTests() {
   console.log('\n====================================================');
   console.log('✅ ALL 22 EXCHANGE STATISTICS EDGE CASES VERIFIED SUCCESSFULLY!');
   console.log('====================================================\n');
+
+  // Wait for background order confirmation email lifecycle to complete in DB
+  await waitForOrderEmailDelivery(order.id);
 
   // Cleanup test order
   await pool.query('DELETE FROM orders WHERE id = $1::text::uuid', [order.id]);

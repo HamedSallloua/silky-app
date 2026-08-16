@@ -1,10 +1,11 @@
-import { pgTable, uuid, varchar, text, numeric, integer, timestamp, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, numeric, integer, timestamp, pgEnum, unique } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { users } from './users.model.js';
 import { productVariants } from './products.model.js';
 
 export const orderStatusEnum = pgEnum('order_status', ['pending', 'processing', 'completed', 'cancelled', 'exchanged']);
 export const orderSourceEnum = pgEnum('order_source', ['web', 'social_media', 'instagram', 'whatsapp', 'phone']);
+export const emailDeliveryStatusEnum = pgEnum('email_delivery_status', ['pending', 'sent', 'failed']);
 
 export const orders = pgTable('orders', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -63,6 +64,18 @@ export const exchangeItems = pgTable('exchange_items', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const orderEmailDeliveries = pgTable('order_email_deliveries', {
+  id:           uuid('id').defaultRandom().primaryKey(),
+  orderId:      uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  emailType:    varchar('email_type', { length: 64 }).notNull(),
+  status:       varchar('status', { length: 16 }).notNull().default('pending'),
+  errorMessage: text('error_message'),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  sentAt:       timestamp('sent_at',    { withTimezone: true }),
+}, (t) => ([
+  unique('uq_order_email_deliveries_order_type').on(t.orderId, t.emailType),
+]));
+
 export const ordersRelations = relations(orders, ({ one, many }) => ({
   user: one(users, {
     fields: [orders.userId],
@@ -70,6 +83,14 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   }),
   items: many(orderItems),
   exchanges: many(orderExchanges),
+  emailDeliveries: many(orderEmailDeliveries),
+}));
+
+export const orderEmailDeliveriesRelations = relations(orderEmailDeliveries, ({ one }) => ({
+  order: one(orders, {
+    fields: [orderEmailDeliveries.orderId],
+    references: [orders.id],
+  }),
 }));
 
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({

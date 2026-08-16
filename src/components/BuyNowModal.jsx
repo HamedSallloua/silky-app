@@ -1,0 +1,367 @@
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useProducts } from '../context/ProductsContext';
+import { api } from '../api/client';
+import { formatPrice } from '../utils/formatPrice';
+import '../styles/buyNowModal.css';
+
+const TUNISIAN_GOVERNORATES = [
+  'Ariana',
+  'Béja',
+  'Ben Arous',
+  'Bizerte',
+  'Gabès',
+  'Gafsa',
+  'Jendouba',
+  'Kairouan',
+  'Kasserine',
+  'Kébili',
+  'Kef',
+  'Mahdia',
+  'Manouba',
+  'Médenine',
+  'Monastir',
+  'Nabeul',
+  'Sfax',
+  'Sidi Bouzid',
+  'Siliana',
+  'Sousse',
+  'Tataouine',
+  'Tozeur',
+  'Tunis',
+  'Zaghouan',
+];
+
+const DEFAULT_DELIVERY_FEE = 8;
+
+export default function BuyNowModal({ isOpen, onClose, buyNowItem }) {
+  const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
+  const { refreshProducts } = useProducts();
+  const modalRef = useRef(null);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    governorate: '',
+    address: '',
+  });
+
+  // Prefill phone from saved account when user is logged in
+  useEffect(() => {
+    if (user?.phoneNumber) {
+      const digits = user.phoneNumber.replace(/\D/g, '').slice(0, 8);
+      setForm((prev) => ({ ...prev, phone: digits }));
+    }
+  }, [user]);
+
+  // Lock body scroll when modal is open and handle Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !buyNowItem) return null;
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    if (name === 'phone') {
+      const numericValue = value.replace(/\D/g, '').slice(0, 8);
+      setForm((prev) => ({ ...prev, phone: numericValue }));
+      if (fieldErrors.phone) setFieldErrors((prev) => ({ ...prev, phone: '' }));
+      return;
+    }
+    setForm((prev) => ({ ...prev, [name]: value }));
+    if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: '' }));
+  };
+
+  const validateForm = () => {
+    const errors = {};
+
+    const trimmedFirstName = (form.firstName || '').trim();
+    if (!trimmedFirstName) {
+      errors.firstName = 'Le prénom est obligatoire.';
+    } else if (trimmedFirstName.length < 3) {
+      errors.firstName = 'Le prénom doit contenir au moins 3 lettres.';
+    } else if (trimmedFirstName.length > 35) {
+      errors.firstName = 'Le prénom ne doit pas dépasser 35 lettres.';
+    }
+
+    const trimmedLastName = (form.lastName || '').trim();
+    if (!trimmedLastName) {
+      errors.lastName = 'Le nom est obligatoire.';
+    } else if (trimmedLastName.length < 3) {
+      errors.lastName = 'Le nom doit contenir au moins 3 lettres.';
+    } else if (trimmedLastName.length > 35) {
+      errors.lastName = 'Le nom ne doit pas dépasser 35 lettres.';
+    }
+
+    const trimmedEmail = (form.email || '').trim();
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      errors.email = 'Veuillez entrer une adresse e-mail valide.';
+    }
+
+    const trimmedPhone = (form.phone || '').trim();
+    if (!trimmedPhone) {
+      errors.phone = 'Le numéro de téléphone est obligatoire.';
+    } else if (!/^\d{8}$/.test(trimmedPhone)) {
+      errors.phone = 'Le numéro de téléphone doit contenir exactement 8 chiffres.';
+    }
+
+    if (!form.governorate) {
+      errors.governorate = 'Veuillez sélectionner un gouvernorat.';
+    }
+
+    const trimmedAddress = (form.address || '').trim();
+    if (!trimmedAddress) {
+      errors.address = "L'adresse de livraison est obligatoire.";
+    }
+
+    return errors;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (isAdmin) {
+      setError('Les administrateurs ne peuvent pas passer de commandes.');
+      return;
+    }
+
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+    setFieldErrors({});
+
+    const fullShippingAddress = `${form.governorate} — ${form.address.trim()}`;
+
+    try {
+      const order = await api.checkout(
+        {
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          email: form.email.trim() || null,
+          phone: form.phone.trim(),
+          address: fullShippingAddress,
+        },
+        {
+          productId: buyNowItem.productId,
+          colorId: buyNowItem.colorId,
+          size: buyNowItem.size,
+          quantity: buyNowItem.quantity,
+        }
+      );
+
+      await refreshProducts();
+      onClose();
+      navigate('/order-confirmation', { state: { order } });
+    } catch (err) {
+      setError(err.message || 'Impossible de finaliser la commande.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const unitPrice = buyNowItem.price || 0;
+  const quantity = buyNowItem.quantity || 1;
+  const subtotal = unitPrice * quantity;
+  const deliveryFee = DEFAULT_DELIVERY_FEE;
+  const total = subtotal + deliveryFee;
+
+  return (
+    <div
+      className="buy-now-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div className="buy-now-modal" ref={modalRef} role="dialog" aria-modal="true">
+        <div className="buy-now-modal-header">
+          <h1 className="buy-now-modal-title">Finaliser la commande</h1>
+          <button
+            type="button"
+            className="buy-now-close-btn"
+            onClick={onClose}
+            aria-label="Fermer"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div className="buy-now-layout">
+          <form className="buy-now-form" onSubmit={handleSubmit} noValidate>
+            <h2>Informations de livraison</h2>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="buyNowFirstName">Prénom *</label>
+                <input
+                  id="buyNowFirstName"
+                  name="firstName"
+                  value={form.firstName}
+                  onChange={handleChange}
+                  className={fieldErrors.firstName ? 'input-error' : ''}
+                />
+                {fieldErrors.firstName && (
+                  <span className="field-error-msg">{fieldErrors.firstName}</span>
+                )}
+              </div>
+              <div className="form-group">
+                <label htmlFor="buyNowLastName">Nom *</label>
+                <input
+                  id="buyNowLastName"
+                  name="lastName"
+                  value={form.lastName}
+                  onChange={handleChange}
+                  className={fieldErrors.lastName ? 'input-error' : ''}
+                />
+                {fieldErrors.lastName && (
+                  <span className="field-error-msg">{fieldErrors.lastName}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="buyNowEmail">
+                Adresse e-mail <span style={{ fontWeight: 400, opacity: 0.65, fontSize: '0.85em' }}>(facultatif)</span>
+              </label>
+              <input
+                type="email"
+                id="buyNowEmail"
+                name="email"
+                value={form.email}
+                onChange={handleChange}
+                className={fieldErrors.email ? 'input-error' : ''}
+              />
+              {fieldErrors.email && (
+                <span className="field-error-msg">{fieldErrors.email}</span>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="buyNowPhone">Téléphone (8 chiffres) *</label>
+              <input
+                type="tel"
+                id="buyNowPhone"
+                name="phone"
+                inputMode="numeric"
+                maxLength={8}
+                value={form.phone}
+                onChange={handleChange}
+                className={fieldErrors.phone ? 'input-error' : ''}
+              />
+              {fieldErrors.phone && (
+                <span className="field-error-msg">{fieldErrors.phone}</span>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="buyNowGovernorate">Gouvernorat *</label>
+              <select
+                id="buyNowGovernorate"
+                name="governorate"
+                value={form.governorate}
+                onChange={handleChange}
+                className={fieldErrors.governorate ? 'input-error' : ''}
+              >
+                <option value="">Sélectionner un gouvernorat *</option>
+                {TUNISIAN_GOVERNORATES.map((gov) => (
+                  <option key={gov} value={gov}>
+                    {gov}
+                  </option>
+                ))}
+              </select>
+              {fieldErrors.governorate && (
+                <span className="field-error-msg">{fieldErrors.governorate}</span>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="buyNowAddress">Adresse (rue, quartier, etc.) *</label>
+              <textarea
+                id="buyNowAddress"
+                name="address"
+                rows={3}
+                placeholder="Rue, quartier, bâtiment, appartement..."
+                value={form.address}
+                onChange={handleChange}
+                className={fieldErrors.address ? 'input-error' : ''}
+              />
+              {fieldErrors.address && (
+                <span className="field-error-msg">{fieldErrors.address}</span>
+              )}
+            </div>
+
+            {error && <p className="buy-now-error">{error}</p>}
+
+            <button type="submit" className="buy-now-submit-btn" disabled={submitting}>
+              {submitting ? 'Confirmation...' : 'Confirmer la commande'}
+            </button>
+          </form>
+
+          <aside className="buy-now-summary">
+            <h2>Récapitulatif</h2>
+            <div className="buy-now-item-card">
+              {buyNowItem.image && (
+                <img
+                  src={buyNowItem.image}
+                  alt={buyNowItem.name}
+                  className="buy-now-item-img"
+                />
+              )}
+              <div className="buy-now-item-details">
+                <h3 className="buy-now-item-title">{buyNowItem.name}</h3>
+                {buyNowItem.details && (
+                  <p className="buy-now-item-variant">{buyNowItem.details}</p>
+                )}
+                <p className="buy-now-item-price-qty">
+                  {formatPrice(unitPrice)} × {quantity}
+                </p>
+              </div>
+            </div>
+
+            <div className="buy-now-row">
+              <span>Sous-total</span>
+              <strong>{formatPrice(subtotal)}</strong>
+            </div>
+            <div className="buy-now-row">
+              <span>Livraison</span>
+              <strong>{formatPrice(deliveryFee)}</strong>
+            </div>
+            <div className="buy-now-row buy-now-total">
+              <span>Total (TTC)</span>
+              <strong>{formatPrice(total)}</strong>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
