@@ -1,9 +1,13 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import '../styles/pwreset.css';
 
 export default function PasswordReset() {
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+
   const { token } = useParams();
   const isResetStep = Boolean(token);
 
@@ -14,6 +18,10 @@ export default function PasswordReset() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  if (isAuthenticated) {
+    return null;
+  }
 
   const handleEmailChange = (e) => {
     setEmail(e.target.value);
@@ -49,6 +57,7 @@ export default function PasswordReset() {
 
   const handleForgotSubmit = async (e) => {
     e.preventDefault();
+    if (isAuthenticated) return;
     setError('');
     setMessage('');
 
@@ -104,6 +113,7 @@ export default function PasswordReset() {
 
   const handleResetSubmit = async (e) => {
     e.preventDefault();
+    if (isAuthenticated) return;
     setError('');
     setMessage('');
 

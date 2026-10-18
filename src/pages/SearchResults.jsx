@@ -9,6 +9,7 @@ export default function SearchResults() {
   const { visibleProducts, loading } = useProducts();
 
   const trimmed = query.trim().toLowerCase();
+
   const results = trimmed
     ? visibleProducts.filter(
         (p) =>

@@ -9,9 +9,12 @@ import '../styles/account.css';
 
 const ORDER_STATUS_LABELS = {
   pending: 'En attente',
-  confirmed: 'Confirmée',
   processing: 'En cours',
-  completed: 'Terminée',
+  confirmed: 'Confirmée',
+  completed: 'Confirmée',
+  delivered: 'Livrée',
+  exchanged: 'Échangée',
+  refunded: 'Remboursée',
   cancelled: 'Annulée',
 };
 
@@ -79,6 +82,11 @@ export default function Account() {
 
     if (!fullName) {
       setProfileError('Le nom complet est requis');
+      return;
+    }
+
+    if (!email && !phoneNumber) {
+      setProfileError('Vous devez conserver au moins un e-mail ou un numéro de téléphone.');
       return;
     }
 
@@ -152,6 +160,9 @@ export default function Account() {
         <img src="/pictures/logo.png" alt="Silky" className="account-logo" />
         <h1 className="account-title">Mon compte</h1>
         <p className="account-subtitle">Bienvenue, {user?.fullName || user?.email}</p>
+        <Link to="/" className="secondary-btn" style={{ display: 'inline-block', marginTop: 16 }}>
+          Découvrir nos produits
+        </Link>
       </header>
 
       <section className="account-section">

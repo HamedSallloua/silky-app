@@ -1,35 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import '../../styles/admin.css';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const { isAdmin, loading: authLoading, adminPanelLogin } = useAuth();
+  const { isAuthenticated, adminPanelLogin } = useAuth();
+
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!authLoading && isAdmin) {
-      navigate('/admin', { replace: true });
-    }
-  }, [authLoading, isAdmin, navigate]);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isAuthenticated) return;
     setLoading(true);
     setError('');
 
     try {
       await adminPanelLogin(password);
-      navigate('/admin');
+      navigate('/admin', { replace: true });
     } catch {
       setError('Mot de passe incorrect');
     } finally {
       setLoading(false);
     }
   };
+
+  if (isAuthenticated) {
+    return null;
+  }
 
   return (
     <main className="admin-login-page">

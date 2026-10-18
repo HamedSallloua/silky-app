@@ -46,3 +46,15 @@ export async function removeItem(req, res) {
   }
 }
 
+export async function clearCart(req, res) {
+  try {
+    const shopper = requireShopper(req);
+    const cart = await cartService.getCart(shopper);
+    if (cart?.id) {
+      await cartService.clearCart(cart.id);
+    }
+    res.json({ message: 'Panier vidé', items: [], subtotal: 0, total: 0 });
+  } catch (err) {
+    sendError(res, err);
+  }
+}

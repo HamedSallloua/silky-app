@@ -16,16 +16,19 @@ export async function submit(req, res) {
   }
 
   const { authorName, email, body, rating } = req.body;
-  if (!authorName?.trim() || !body?.trim()) {
+  const finalAuthorName = req.user?.full_name || req.user?.fullName || authorName;
+  if (!finalAuthorName?.trim() || !body?.trim()) {
     return res.status(400).json({ error: 'Name and review text are required' });
   }
 
   try {
     const result = await reviewService.createStoreReview({
-      authorName,
-      email,
+      authorName: finalAuthorName,
+      email: email || '',
       body,
       rating: rating || 5,
+      userId: req.user?.id || null,
+      guestSessionId: req.user?.id ? null : (req.guestSessionId || null),
     });
     res.status(201).json(result);
   } catch (err) {
@@ -61,4 +64,3 @@ export async function remove(req, res) {
     sendError(res, err);
   }
 }
-

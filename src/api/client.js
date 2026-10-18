@@ -67,9 +67,12 @@ export function getStoredUser() {
 
 
 function getGuestSessionId() {
-
-  return localStorage.getItem(GUEST_SESSION_KEY);
-
+  let id = localStorage.getItem(GUEST_SESSION_KEY);
+  if (!id && typeof crypto !== 'undefined' && crypto.randomUUID) {
+    id = crypto.randomUUID();
+    localStorage.setItem(GUEST_SESSION_KEY, id);
+  }
+  return id;
 }
 
 
@@ -174,108 +177,93 @@ async function request(path, options = {}) {
 
 
 
+export function generateIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export const api = {
-
   // Customer auth
-
   register: (data) => request('/auth/register', { method: 'POST', body: data }),
-
   login: (data) => request('/auth/login', { method: 'POST', body: data }),
-
   forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: { email } }),
-
   resetPassword: (data) => request('/auth/reset-password', { method: 'POST', body: data }),
-
   getMe: () => request('/auth/me'),
-
   updateProfile: (data) => request('/auth/me', { method: 'PATCH', body: data }),
-
   changePassword: (data) => request('/auth/change-password', { method: 'POST', body: data }),
 
-
-
   // Admin panel (password login → JWT)
-
   adminLogin: (password) => request('/admin/login', { method: 'POST', body: { password } }),
-
   adminLogout: () => request('/admin/logout', { method: 'POST' }),
-
   getAdminInventory: () => request('/admin/inventory'),
-
   updateAdminInventory: (variantId, stockQuantity) =>
     request(`/admin/inventory/${variantId}`, { method: 'PATCH', body: { stockQuantity } }),
-
   createManualOrder: (data) => request('/admin/orders/manual', { method: 'POST', body: data }),
-
+  // Admin Draft Orders (Brouillons)
+  getDrafts: () => request('/admin/drafts'),
+  getDraft: (id) => request(`/admin/drafts/${id}`),
+  createDraft: (data) => request('/admin/drafts', { method: 'POST', body: data }),
+  saveDraft: (id, data) => request(`/admin/drafts/${id}`, { method: 'PATCH', body: data }),
+  deleteDraft: (id) => request(`/admin/drafts/${id}`, { method: 'DELETE' }),
+  confirmDraft: (id) => request(`/admin/drafts/${id}/confirm`, { method: 'POST' }),
   previewExchange: (orderId, data) => request(`/admin/orders/${orderId}/exchange/preview`, { method: 'POST', body: data }),
-
   createExchange: (orderId, data) => request(`/admin/orders/${orderId}/exchange`, { method: 'POST', body: data }),
-
   getAdminAnalytics: (params) => {
     const query = new URLSearchParams();
     if (params?.granularity) query.set('granularity', params.granularity);
     if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.piePeriod) query.set('piePeriod', params.piePeriod);
     const suffix = query.toString() ? `?${query.toString()}` : '';
     return request(`/admin/analytics${suffix}`);
   },
 
-
-
   getTheme: () => request('/theme'),
-
   updateTheme: (theme) => request('/theme', { method: 'PUT', body: theme }),
-
   uploadThemeImage: (formData) => request('/theme/upload', { method: 'POST', body: formData }),
 
-
-
   getProducts: (params) => {
-
     const query = new URLSearchParams();
-
     if (params?.category) query.set('category', params.category);
-
     if (params?.search) query.set('search', params.search);
-
     if (params?.page) query.set('page', String(params.page));
-
     if (params?.limit) query.set('limit', String(params.limit));
-
     if (params?.includeHidden) query.set('includeHidden', 'true');
-
     const suffix = query.toString() ? `?${query.toString()}` : '';
-
     return request(`/products${suffix}`);
-
   },
-
   getProduct: (id) => request(`/products/${id}`),
-
   getProductReviews: (id) => request(`/products/${id}/reviews`),
-
   submitProductReview: (id, review) =>
-
     request(`/products/${id}/reviews`, { method: 'POST', body: review }),
 
-
-
   getCart: () => request('/cart'),
-
   addCartItem: (item) => request('/cart/items', { method: 'POST', body: item }),
-
   removeCartItem: (id) => request(`/cart/items/${id}`, { method: 'DELETE' }),
 
-
-
   getFavourites: () => request('/favourites'),
+  toggleFavourite: (payload) => {
+    const body = typeof payload === 'string' ? { productId: payload } : payload;
+    return request('/favourites/toggle', { method: 'POST', body });
+  },
 
-  toggleFavourite: (productId) =>
+  checkout: (customer, buyNowItem = null, idempotencyKey = null) => {
+    const headers = {};
+    if (idempotencyKey) {
+      headers['Idempotency-Key'] = idempotencyKey;
+    }
+    return request('/orders/checkout', {
+      method: 'POST',
+      headers,
+      body: { customer, buyNowItem },
+    });
+  },
 
-    request('/favourites/toggle', { method: 'POST', body: { productId } }),
-
-
-
-  checkout: (customer, buyNowItem) => request('/orders/checkout', { method: 'POST', body: { customer, buyNowItem } }),
 
   createProduct: (product) => request('/products', { method: 'POST', body: product }),
 
@@ -284,6 +272,12 @@ export const api = {
   deleteProduct: (id) => request(`/products/${id}`, { method: 'DELETE' }),
 
   uploadProductImage: (formData) => request('/products/upload', { method: 'POST', body: formData }),
+
+  getProductVideos: (productId) => request(`/products/${productId}/videos`),
+
+  uploadProductVideo: (productId, formData) => request(`/products/${productId}/videos`, { method: 'POST', body: formData }),
+
+  deleteProductVideo: (productId, videoId) => request(`/products/${productId}/videos/${videoId}`, { method: 'DELETE' }),
 
 
 
@@ -295,11 +289,19 @@ export const api = {
 
   createOrder: (order) => request('/orders', { method: 'POST', body: order }),
 
+  confirmOrder: (id) => request(`/orders/${id}/confirm`, { method: 'POST' }),
+
+  deliverOrder: (id) => request(`/orders/${id}/deliver`, { method: 'POST' }),
+
+  confirmOrders: (orderIds) => request('/orders/bulk-confirm', { method: 'POST', body: { orderIds } }),
+
   updateOrderStatus: (id, status) => request(`/orders/${id}/status`, { method: 'PATCH', body: { status } }),
 
   updateOrdersStatus: (orderIds, status) => request('/orders/bulk-status', { method: 'PATCH', body: { orderIds, status } }),
 
   cancelOrder: (id) => request(`/orders/${id}/cancel`, { method: 'POST' }),
+
+  refundOrder: (id, data = {}) => request(`/orders/${id}/refund`, { method: 'POST', body: data }),
 
 
 
@@ -338,6 +340,25 @@ export const api = {
   getContactMessage: (id) => request(`/contact/${id}`),
 
   sendContactReply: (id, data) => request(`/contact/${id}/reply`, { method: 'POST', body: data }),
+
+  // Admin Notifications
+
+  getNotifications: () => request('/notifications'),
+
+  getAllNotifications: (params) => {
+    const query = new URLSearchParams();
+    if (params?.offset !== undefined) query.set('offset', String(params.offset));
+    if (params?.limit !== undefined) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/notifications/all${suffix}`);
+  },
+
+  markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
+
+  markAllNotificationsRead: () => request('/notifications/read-all', { method: 'POST' }),
+
+  // Governorates
+  getGovernorates: () => request('/governorates'),
 
 };
 

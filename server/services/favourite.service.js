@@ -1,39 +1,125 @@
+import { and, eq } from 'drizzle-orm';
 import { favouriteRepository } from '../repositories/favourite.repository.js';
 import { productRepository } from '../repositories/product.repository.js';
+import { runInTransaction } from '../repositories/transaction.repository.js';
+import { productVariants } from '../models/index.js';
 import { AppError } from '../utils/errors.js';
 
 export async function getFavourites(shopper) {
   const favouritesList = await favouriteRepository.findByShopper(shopper);
-  const productIds = favouritesList.map((f) => f.productId);
+  const productIds = Array.from(new Set(favouritesList.map((f) => f.productId)));
   return {
     productIds,
     favourites: favouritesList,
+    items: favouritesList,
   };
 }
 
-export async function toggleFavourite(shopper, productId) {
-  if (!productId) {
-    throw new AppError('productId is required', 400);
+async function resolveCanonicalVariant(productId, variantId, colorId, size, tx) {
+  // 1. If canonical variantId is provided, verify it and check product ownership
+  if (variantId) {
+    const variant = await productRepository.findVariantById(variantId, tx);
+    if (!variant) {
+      throw new AppError('Variant not found', 404);
+    }
+    if (productId && variant.productId !== productId) {
+      throw new AppError('Variant does not belong to the specified product', 400);
+    }
+    return variant;
   }
 
-  const product = await productRepository.findById(productId);
-  if (!product) {
-    throw new AppError('Product not found', 404);
+  // 2. If productId + colorId + size provided, resolve using exact Cart logic
+  if (productId && colorId && size) {
+    const variant = await productRepository.findVariantForOrderItem(productId, colorId, size, tx);
+    if (!variant) {
+      throw new AppError('Variant not found for specified color and size', 404);
+    }
+    return variant;
   }
 
-  const exists = await favouriteRepository.exists(shopper, productId);
-  let favorited = false;
-
-  if (exists) {
-    await favouriteRepository.remove(shopper, productId);
-    favorited = false;
-  } else {
-    await favouriteRepository.add(shopper, productId);
-    favorited = true;
+  // 3. If productId + colorId provided, resolve first variant matching the color
+  if (productId && colorId) {
+    const [variant] = await tx
+      .select()
+      .from(productVariants)
+      .where(
+        and(
+          eq(productVariants.productId, productId),
+          eq(productVariants.colorSlug, colorId)
+        )
+      )
+      .limit(1);
+    if (variant) {
+      return variant;
+    }
   }
 
-  return {
-    productId,
-    isFavourite: favorited,
-  };
+  return null;
+}
+
+export async function toggleFavourite(shopper, payload) {
+  const data = typeof payload === 'string' ? { productId: payload } : (payload || {});
+  let { productId, variantId, colorId, size, favoriteId } = data;
+
+  if (!productId && !variantId && !favoriteId) {
+    throw new AppError('productId, variantId, or favoriteId is required', 400);
+  }
+
+  return runInTransaction(async (tx) => {
+    // 1. Resolve canonical variant
+    const resolvedVariant = await resolveCanonicalVariant(productId, variantId, colorId, size, tx);
+    const finalVariantId = resolvedVariant ? resolvedVariant.id : (variantId || null);
+
+    if (resolvedVariant && !productId) {
+      productId = resolvedVariant.productId;
+    }
+
+    // 2. Verify product exists & is active
+    if (productId) {
+      const product = await productRepository.findById(productId, tx);
+      if (!product || !product.is_active) {
+        throw new AppError('Product not found or inactive', 404);
+      }
+    }
+
+    // 3. Check existence for this shopper + variant
+    const exists = await favouriteRepository.exists(
+      shopper,
+      { productId, variantId: finalVariantId, favoriteId },
+      tx
+    );
+
+    let isFavourite = false;
+
+    if (exists) {
+      await favouriteRepository.remove(
+        shopper,
+        { productId, variantId: finalVariantId, favoriteId },
+        tx
+      );
+      isFavourite = false;
+    } else {
+      if (!productId && resolvedVariant) {
+        productId = resolvedVariant.productId;
+      }
+      await favouriteRepository.add(
+        shopper,
+        { productId, variantId: finalVariantId },
+        tx
+      );
+      isFavourite = true;
+    }
+
+    const updatedFavourites = await favouriteRepository.findByShopper(shopper, tx);
+    const productIds = Array.from(new Set(updatedFavourites.map((f) => f.productId)));
+
+    return {
+      productId,
+      variantId: finalVariantId,
+      isFavourite,
+      productIds,
+      favourites: updatedFavourites,
+      items: updatedFavourites,
+    };
+  });
 }

@@ -50,7 +50,8 @@ async function runTests() {
     phoneNumber: '11111111',
     orderSource: 'phone',
     customerEmail: 'test1@example.com',
-    shippingAddress: 'Tunis',
+    governorate: 'Tunis',
+    shippingAddress: 'Rue 123',
     items: [{ variantId: varA.id, quantity: 2 }],
   });
 
@@ -70,11 +71,12 @@ async function runTests() {
   await resetStocks(20, 20, 20);
 
   const order2 = await adminService.createManualOrder({
-    customerName: 'Test Exch1 Cancel',
+    customerName: 'Test Exch One Cancel',
     phoneNumber: '22222222',
     orderSource: 'phone',
     customerEmail: 'test2@example.com',
-    shippingAddress: 'Tunis',
+    governorate: 'Tunis',
+    shippingAddress: 'Rue 123',
     items: [{ variantId: varA.id, quantity: 2 }],
   });
   await orderService.updateOrderStatus(order2.id, 'completed');
@@ -83,8 +85,8 @@ async function runTests() {
 
   await exchangeService.createExchange({
     orderId: order2.id,
-    customer: { customerName: 'Test Exch1 Cancel', phoneNumber: '22222222', shippingAddress: 'Tunis' },
-    items: [{ variantId: varB.id, quantity: 3 }],
+    customer: { customerName: 'Test Exch One Cancel', phoneNumber: '22222222', shippingAddress: 'Tunis' },
+    items: [{ variantId: varB.id, action: 'add', quantity: 3 }],
   });
 
   console.log(`After exchange #1: Stock A = ${await getStock(varA.id)} (20), Stock B = ${await getStock(varB.id)} (17)`);
@@ -108,7 +110,8 @@ async function runTests() {
     phoneNumber: '33333333',
     orderSource: 'phone',
     customerEmail: 'test3@example.com',
-    shippingAddress: 'Tunis',
+    governorate: 'Tunis',
+    shippingAddress: 'Rue 123',
     items: [{ variantId: varA.id, quantity: 2 }],
   });
   await orderService.updateOrderStatus(order3.id, 'completed');
@@ -117,14 +120,14 @@ async function runTests() {
   await exchangeService.createExchange({
     orderId: order3.id,
     customer: { customerName: 'Test MultiExch Cancel', phoneNumber: '33333333', shippingAddress: 'Tunis' },
-    items: [{ variantId: varB.id, quantity: 3 }],
+    items: [{ variantId: varB.id, action: 'add', quantity: 3 }],
   });
 
   // Exchange 2: B x 3 -> C x 1
   await exchangeService.createExchange({
     orderId: order3.id,
     customer: { customerName: 'Test MultiExch Cancel', phoneNumber: '33333333', shippingAddress: 'Tunis' },
-    items: [{ variantId: varC.id, quantity: 1 }],
+    items: [{ variantId: varC.id, action: 'add', quantity: 1 }],
   });
 
   console.log(`After exchange #2: Stock A = ${await getStock(varA.id)} (20), Stock B = ${await getStock(varB.id)} (20), Stock C = ${await getStock(varC.id)} (19)`);
@@ -150,7 +153,8 @@ async function runTests() {
     phoneNumber: '44444444',
     orderSource: 'phone',
     customerEmail: 'test4@example.com',
-    shippingAddress: 'Tunis',
+    governorate: 'Tunis',
+    shippingAddress: 'Rue 123',
     items: [{ variantId: varA.id, quantity: 2 }],
   });
   await orderService.updateOrderStatus(order4.id, 'completed');
@@ -160,8 +164,8 @@ async function runTests() {
     orderId: order4.id,
     customer: { customerName: 'Test MultiItem Cancel', phoneNumber: '44444444', shippingAddress: 'Tunis' },
     items: [
-      { variantId: varA.id, quantity: 2 },
-      { variantId: varB.id, quantity: 1 },
+      { variantId: varA.id, action: 'keep', quantity: 2 },
+      { variantId: varB.id, action: 'add', quantity: 1 },
     ],
   });
 
@@ -186,7 +190,8 @@ async function runTests() {
     phoneNumber: '55555555',
     orderSource: 'phone',
     customerEmail: 'test5@example.com',
-    shippingAddress: 'Tunis',
+    governorate: 'Tunis',
+    shippingAddress: 'Rue 123',
     items: [{ variantId: varA.id, quantity: 2 }],
   });
   await orderService.updateOrderStatus(order5.id, 'completed');
@@ -194,7 +199,7 @@ async function runTests() {
   await exchangeService.createExchange({
     orderId: order5.id,
     customer: { customerName: 'Test Status Update Cancel', phoneNumber: '55555555', shippingAddress: 'Tunis' },
-    items: [{ variantId: varB.id, quantity: 3 }],
+    items: [{ variantId: varB.id, action: 'add', quantity: 3 }],
   });
 
   const cancelled5 = await orderService.updateOrderStatus(order5.id, 'cancelled');
@@ -207,14 +212,19 @@ async function runTests() {
   }
   console.log('✓ Test 5 Passed!\n');
 
-  // Cleanup test orders
-  await pool.query('DELETE FROM orders WHERE id IN ($1::text::uuid, $2::text::uuid, $3::text::uuid, $4::text::uuid, $5::text::uuid)', [
-    order1.id,
-    order2.id,
-    order3.id,
-    order4.id,
-    order5.id,
-  ]);
+  // Cleanup test orders after background emails settle
+  const testOrderIds = [order1.id, order2.id, order3.id, order4.id, order5.id];
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) AS pending FROM order_email_deliveries WHERE order_id = ANY($1::uuid[]) AND status = 'pending'`,
+      [testOrderIds]
+    );
+    if (Number(rows[0]?.pending || 0) === 0) break;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
+  await pool.query('DELETE FROM orders WHERE id = ANY($1::uuid[])', [testOrderIds]);
 
   console.log('====================================================');
   console.log('✅ ALL CANCELLATION RESTORATION TESTS PASSED!');
@@ -229,3 +239,4 @@ runTests()
   .finally(() => {
     pool.end();
   });
+

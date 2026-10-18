@@ -17,17 +17,16 @@ export async function toggle(req, res) {
     return res.status(403).json({ error: 'Les administrateurs ne peuvent pas ajouter de produits aux favoris.' });
   }
 
-  const { productId } = req.body;
-  if (!productId) {
-    return res.status(400).json({ error: 'productId is required' });
+  const { productId, variantId, favoriteId } = req.body || {};
+  if (!productId && !variantId && !favoriteId) {
+    return res.status(400).json({ error: 'productId, variantId, or favoriteId is required' });
   }
 
   try {
     const shopper = requireShopper(req);
-    const result = await favouriteService.toggleFavourite(shopper, productId);
+    const result = await favouriteService.toggleFavourite(shopper, req.body);
     res.json(result);
   } catch (err) {
     sendError(res, err);
   }
 }
-

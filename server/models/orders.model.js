@@ -5,6 +5,7 @@ import {
   text,
   numeric,
   integer,
+  serial,
   timestamp,
   pgEnum,
   unique,
@@ -27,19 +28,10 @@ export const orderStatusEnum = pgEnum(
     'pending',
     'processing',
     'completed',
+    'delivered',
     'cancelled',
     'exchanged',
-  ]
-);
-
-export const orderSourceEnum = pgEnum(
-  'order_source',
-  [
-    'web',
-    'social_media',
-    'instagram',
-    'whatsapp',
-    'phone',
+    'refunded',
   ]
 );
 
@@ -50,6 +42,25 @@ export const emailDeliveryStatusEnum = pgEnum(
     'sent',
     'failed',
   ]
+);
+
+// -----------------------------------------------------------------------------
+// Governorates
+// -----------------------------------------------------------------------------
+
+export const governorates = pgTable(
+  'governorates',
+  {
+    id: serial('id').primaryKey(),
+
+    name: varchar('name', {
+      length: 64,
+    }).notNull().unique(),
+
+    code: varchar('code', {
+      length: 32,
+    }).notNull().unique(),
+  }
 );
 
 // -----------------------------------------------------------------------------
@@ -84,6 +95,10 @@ export const orders = pgTable(
       length: 32,
     }).notNull(),
 
+    governorateId: integer('governorate_id')
+      .notNull()
+      .references(() => governorates.id),
+
     shippingAddress: text('shipping_address')
       .notNull(),
 
@@ -101,10 +116,6 @@ export const orders = pgTable(
       precision: 10,
       scale: 3,
     }).notNull(),
-
-    orderSource: orderSourceEnum('order_source')
-      .default('web')
-      .notNull(),
 
     status: orderStatusEnum('status')
       .default('pending')
@@ -127,8 +138,8 @@ export const orders = pgTable(
       .on(table.guestSessionId)
       .where(sql`${table.guestSessionId} IS NOT NULL`),
 
-    index('idx_orders_order_source').on(
-      table.orderSource
+    index('idx_orders_governorate_id').on(
+      table.governorateId
     ),
 
     index('idx_orders_status').on(
@@ -241,6 +252,12 @@ export const orderExchanges = pgTable(
       .default(1)
       .notNull(),
 
+    paymentResponsibility: varchar('payment_responsibility', {
+      length: 32,
+    })
+      .default('customer_paid')
+      .notNull(),
+
     customerName: varchar('customer_name', {
       length: 255,
     }).notNull(),
@@ -271,6 +288,16 @@ export const orderExchanges = pgTable(
       scale: 3,
     }).notNull(),
 
+    productAmountAdded: numeric('product_amount_added', {
+      precision: 10,
+      scale: 3,
+    }).default('0').notNull(),
+
+    productRefundObligation: numeric('product_refund_obligation', {
+      precision: 10,
+      scale: 3,
+    }).default('0').notNull(),
+
     createdAt: timestamp('created_at', {
       withTimezone: true,
     }).defaultNow().notNull(),
@@ -278,6 +305,11 @@ export const orderExchanges = pgTable(
   (table) => [
     index('idx_order_exchanges_order_id').on(
       table.orderId
+    ),
+
+    check(
+      'order_exchanges_payment_resp_valid',
+      sql`${table.paymentResponsibility} IN ('customer_paid', 'silky_paid')`
     ),
 
     check(
@@ -293,6 +325,16 @@ export const orderExchanges = pgTable(
     check(
       'order_exchanges_total_amount_non_negative',
       sql`${table.totalAmount} >= 0`
+    ),
+
+    check(
+      'order_exchanges_product_amount_added_non_negative',
+      sql`${table.productAmountAdded} >= 0`
+    ),
+
+    check(
+      'order_exchanges_product_refund_obligation_non_negative',
+      sql`${table.productRefundObligation} >= 0`
     ),
   ]
 );
@@ -407,8 +449,163 @@ export const orderEmailDeliveries = pgTable(
 );
 
 // -----------------------------------------------------------------------------
+// Order refunds
+// -----------------------------------------------------------------------------
+
+export const orderRefunds = pgTable(
+  'order_refunds',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    orderId: uuid('order_id')
+      .notNull()
+      .references(() => orders.id, {
+        onDelete: 'cascade',
+      }),
+
+    refundNumber: varchar('refund_number', {
+      length: 64,
+    }).notNull().unique(),
+
+    paymentResponsibility: varchar('payment_responsibility', {
+      length: 32,
+    })
+      .default('customer_paid')
+      .notNull(),
+
+    customerName: varchar('customer_name', {
+      length: 255,
+    }).notNull(),
+
+    customerEmail: varchar('customer_email', {
+      length: 255,
+    }),
+
+    customerPhone: varchar('customer_phone', {
+      length: 32,
+    }).notNull(),
+
+    shippingAddress: text('shipping_address')
+      .notNull(),
+
+    refundAmount: numeric('refund_amount', {
+      precision: 10,
+      scale: 3,
+    }).notNull(),
+
+    deliveryFee: numeric('delivery_fee', {
+      precision: 10,
+      scale: 3,
+    }).default('8.000').notNull(),
+
+    carrierCost: numeric('carrier_cost', {
+      precision: 10,
+      scale: 3,
+    }).default('7.000').notNull(),
+
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+    }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_order_refunds_order_id').on(
+      table.orderId
+    ),
+
+    check(
+      'order_refunds_payment_resp_valid',
+      sql`${table.paymentResponsibility} IN ('customer_paid', 'silky_paid')`
+    ),
+
+    check(
+      'order_refunds_refund_amount_non_negative',
+      sql`${table.refundAmount} >= 0`
+    ),
+
+    check(
+      'order_refunds_delivery_fee_non_negative',
+      sql`${table.deliveryFee} >= 0`
+    ),
+
+    check(
+      'order_refunds_carrier_cost_non_negative',
+      sql`${table.carrierCost} >= 0`
+    ),
+  ]
+);
+
+// -----------------------------------------------------------------------------
+// Refund items
+// -----------------------------------------------------------------------------
+
+export const refundItems = pgTable(
+  'refund_items',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    refundId: uuid('refund_id')
+      .notNull()
+      .references(() => orderRefunds.id, {
+        onDelete: 'cascade',
+      }),
+
+    variantId: uuid('variant_id')
+      .references(() => productVariants.id, {
+        onDelete: 'set null',
+      }),
+
+    productTitle: varchar('product_title', {
+      length: 255,
+    }).notNull(),
+
+    variantLabel: varchar('variant_label', {
+      length: 255,
+    }),
+
+    imageUrl: text('image_url'),
+
+    quantity: integer('quantity').notNull(),
+
+    unitPrice: numeric('unit_price', {
+      precision: 10,
+      scale: 3,
+    }).notNull(),
+
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+    }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_refund_items_refund_id').on(
+      table.refundId
+    ),
+
+    index('idx_refund_items_variant_id').on(
+      table.variantId
+    ),
+
+    check(
+      'refund_items_quantity_positive',
+      sql`${table.quantity} > 0`
+    ),
+
+    check(
+      'refund_items_unit_price_non_negative',
+      sql`${table.unitPrice} >= 0`
+    ),
+  ]
+);
+
+// -----------------------------------------------------------------------------
 // Relations
 // -----------------------------------------------------------------------------
+
+export const governoratesRelations = relations(
+  governorates,
+  ({ many }) => ({
+    orders: many(orders),
+  })
+);
 
 export const ordersRelations = relations(
   orders,
@@ -418,15 +615,51 @@ export const ordersRelations = relations(
       references: [users.id],
     }),
 
+    governorate: one(governorates, {
+      fields: [orders.governorateId],
+      references: [governorates.id],
+    }),
+
     items: many(orderItems),
 
     exchanges: many(orderExchanges),
+
+    refunds: many(orderRefunds),
 
     emailDeliveries: many(
       orderEmailDeliveries
     ),
   })
 );
+
+export const orderRefundsRelations =
+  relations(
+    orderRefunds,
+    ({ one, many }) => ({
+      order: one(orders, {
+        fields: [orderRefunds.orderId],
+        references: [orders.id],
+      }),
+
+      items: many(refundItems),
+    })
+  );
+
+export const refundItemsRelations =
+  relations(
+    refundItems,
+    ({ one }) => ({
+      refund: one(orderRefunds, {
+        fields: [refundItems.refundId],
+        references: [orderRefunds.id],
+      }),
+
+      variant: one(productVariants, {
+        fields: [refundItems.variantId],
+        references: [productVariants.id],
+      }),
+    })
+  );
 
 export const orderEmailDeliveriesRelations =
   relations(

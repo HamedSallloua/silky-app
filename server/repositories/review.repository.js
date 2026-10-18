@@ -77,11 +77,20 @@ export const reviewRepository = {
     return tx.select().from(storeReviews).orderBy(desc(storeReviews.createdAt));
   },
 
-  async createStoreReview({ authorName, email = '', body, rating = 5 }, tx = db) {
+  async createStoreReview({ authorName, email = '', body, rating = 5, userId = null, guestSessionId = null }, tx = db) {
+    let finalAuthorName = authorName?.trim() || 'Client';
+    if (userId) {
+      const [userRow] = await tx.select({ fullName: users.fullName })
+        .from(users).where(eq(users.id, userId));
+      if (userRow?.fullName) finalAuthorName = userRow.fullName;
+    }
+
     const [review] = await tx.insert(storeReviews).values({
-      authorName,
-      email,
-      body,
+      userId: userId || null,
+      guestSessionId: userId ? null : (guestSessionId || null),
+      authorName: finalAuthorName,
+      email: email ? email.trim() : '',
+      body: body.trim(),
       rating,
       status: 'pending',
     }).returning();
@@ -127,20 +136,27 @@ export const reviewRepository = {
     return tx.select().from(reviews).where(eq(reviews.productId, productId)).orderBy(desc(reviews.createdAt));
   },
 
-  async createProductReview({ productId, userId = null, authorName = 'Client', rating, comment }, tx = db) {
+  async createProductReview({ productId, userId = null, guestSessionId = null, email = null, authorName = 'Client', rating, comment }, tx = db) {
     let finalAuthorName = authorName?.trim() || 'Client';
+    let finalEmail = email?.trim() || null;
+    let finalGuestSessionId = guestSessionId || null;
+
     if (userId) {
       const [userRow] = await tx.select({ fullName: users.fullName })
         .from(users).where(eq(users.id, userId));
       if (userRow?.fullName) finalAuthorName = userRow.fullName;
+      finalGuestSessionId = null;
+      finalEmail = null;
     }
 
     const [review] = await tx.insert(reviews).values({
       productId,
-      userId,
+      userId: userId || null,
+      guestSessionId: finalGuestSessionId,
+      email: finalEmail,
       authorName: finalAuthorName,
       rating,
-      comment,
+      comment: comment.trim(),
       isApproved: false,
       status: 'pending',
       showInGeneral: false,

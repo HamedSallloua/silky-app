@@ -11,12 +11,43 @@ export default function Header() {
 
   const accountPath = !isAuthenticated ? '/login' : isAdmin ? '/admin' : '/account';
   const accountLabel = !isAuthenticated ? 'Compte' : isAdmin ? 'Admin' : 'Mon compte';
-  const { items, itemCount, subtotal, total } = useCart();
+  const { items, itemCount, subtotal, total, lastAddedAt } = useCart();
   const { visibleProducts } = useProducts();
 
   const [query, setQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [isAutoOpen, setIsAutoOpen] = useState(false);
   const searchRef = useRef(null);
+  const headerRef = useRef(null);
+  const cartTimerRef = useRef(null);
+  const prevLastAddedRef = useRef(lastAddedAt);
+
+  // Maintain dynamic header height for sticky subordinate bars
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+
+    const updateHeaderHeight = () => {
+      const height = el.getBoundingClientRect().height;
+      if (height > 0) {
+        document.documentElement.style.setProperty('--header-height', `${height}px`);
+      }
+    };
+
+    updateHeaderHeight();
+
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(updateHeaderHeight);
+      ro.observe(el);
+    }
+    window.addEventListener('resize', updateHeaderHeight);
+
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', updateHeaderHeight);
+    };
+  }, []);
 
   const trimmed = query.trim().toLowerCase();
 
@@ -65,8 +96,34 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Automatically show cart dropdown for 5 seconds on successful item addition
+  useEffect(() => {
+    if (!lastAddedAt) return;
+    if (prevLastAddedRef.current === lastAddedAt) return;
+    prevLastAddedRef.current = lastAddedAt;
+
+    if (cartTimerRef.current) {
+      clearTimeout(cartTimerRef.current);
+      cartTimerRef.current = null;
+    }
+
+    setIsAutoOpen(true);
+
+    cartTimerRef.current = setTimeout(() => {
+      setIsAutoOpen(false);
+      cartTimerRef.current = null;
+    }, 5000);
+
+    return () => {
+      if (cartTimerRef.current) {
+        clearTimeout(cartTimerRef.current);
+        cartTimerRef.current = null;
+      }
+    };
+  }, [lastAddedAt]);
+
   return (
-    <div className="header_wrapper">
+    <div ref={headerRef} className="header_wrapper">
       <div className="top_utility_bar">
         <div className="contact_section">
           <div className="social_icons">
@@ -117,7 +174,7 @@ export default function Header() {
               <span>Panier{itemCount > 0 ? ` (${itemCount})` : ''}</span>
             </Link>
 
-            <div className="cart_dropdown_box">
+            <div className={`cart_dropdown_box${isAutoOpen ? ' is_visible' : ''}`}>
               {items.length === 0 ? (
                 <p className="cart_dropdown_empty">Votre panier est vide.</p>
               ) : (
@@ -233,7 +290,7 @@ export default function Header() {
                     <button
                       key={product.id}
                       type="button"
-                      className="search_dropdown_item"
+                      className={`search_dropdown_item${product.isHidden ? ' search_dropdown_item--hidden' : ''}`}
                       onMouseDown={() => handleSuggestionClick(product)}
                       role="option"
                     >
@@ -243,7 +300,14 @@ export default function Header() {
                         className="search_dropdown_img"
                       />
                       <div className="search_dropdown_info">
-                        <span className="search_dropdown_name">{product.name}</span>
+                        <span className="search_dropdown_name">
+                          {product.name}
+                          {product.isHidden && (
+                            <span className="admin-badge admin-badge--warning" style={{ marginLeft: 6, fontSize: '0.65rem', padding: '2px 6px' }}>
+                              ● Masqué
+                            </span>
+                          )}
+                        </span>
                         <span className="search_dropdown_category">{product.category}</span>
                       </div>
                     </button>

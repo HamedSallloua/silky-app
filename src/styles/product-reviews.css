@@ -248,3 +248,114 @@
     gap: 24px;
   }
 }
+
+/* Admin Product Reviews Section on Product Page */
+.admin-product-reviews-container {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #eaeaea;
+}
+
+.admin-product-reviews-container h4 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111111;
+  margin-bottom: 14px;
+}
+
+.admin-product-reviews-container .admin-reviews-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-product-reviews-container .admin-review-card {
+  padding: 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+  transition: border-color 0.2s ease;
+}
+
+.admin-product-reviews-container .admin-btn {
+  background: var(--color-primary, #8d191c);
+  color: #fff;
+  border: 1px solid transparent;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.admin-product-reviews-container .admin-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.admin-product-reviews-container .admin-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.admin-product-reviews-container .admin-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.admin-product-reviews-container .admin-btn.sm {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  border-radius: 6px;
+}
+
+.admin-product-reviews-container .admin-btn.secondary {
+  background: var(--color-secondary, #f3ebec);
+  color: var(--color-primary, #8d191c);
+  border: 1px solid var(--color-primary, #8d191c);
+}
+
+.admin-product-reviews-container .admin-btn.secondary:hover:not(:disabled) {
+  background: #e8dbde;
+}
+
+.admin-product-reviews-container .admin-btn.danger {
+  background: #fff;
+  color: #c0392b;
+  border: 1px solid #c0392b;
+}
+
+.admin-product-reviews-container .admin-btn.danger:hover:not(:disabled) {
+  background: #fee;
+}
+
+.admin-product-reviews-container .admin-btn.warning-btn {
+  background: #d35400;
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+.admin-product-reviews-container .admin-btn.warning-btn:hover:not(:disabled) {
+  background: #e67e22;
+}
+
+.admin-product-reviews-container .admin-empty {
+  font-size: 13px;
+  color: #666;
+  padding: 16px;
+  text-align: center;
+  background: #fafafa;
+  border-radius: 6px;
+}
+
+.admin-product-reviews-container .admin-loading {
+  font-size: 13px;
+  color: #666;
+}
+
+.admin-product-reviews-container .admin-message.error {
+  color: #c62828;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 
-export default function AdminMessages() {
+export default function AdminMessages({ highlightMessageId = null }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMessage, setSelectedMessage] = useState(null);
+  const [activeHighlightId, setActiveHighlightId] = useState(null);
 
   // Reply Composer Modal state
   const [replyingMessage, setReplyingMessage] = useState(null);
@@ -16,8 +17,8 @@ export default function AdminMessages() {
   const [replyError, setReplyError] = useState('');
   const [replySuccess, setReplySuccess] = useState('');
 
-  const loadMessages = async () => {
-    setLoading(true);
+  const loadMessages = async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     setError('');
     try {
       const data = await api.getContactMessages();
@@ -25,13 +26,35 @@ export default function AdminMessages() {
     } catch (err) {
       setError(err.message || 'Impossible de charger les messages.');
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadMessages();
+    loadMessages(true);
   }, []);
+
+  useEffect(() => {
+    if (highlightMessageId && messages.length > 0) {
+      setSearchQuery('');
+      setActiveHighlightId(highlightMessageId);
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`msg-${highlightMessageId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+
+      const clearTimer = setTimeout(() => {
+        setActiveHighlightId(null);
+      }, 3500);
+
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(clearTimer);
+      };
+    }
+  }, [highlightMessageId, messages]);
 
   const openReplyModal = (msg) => {
     if (!msg) return;
@@ -115,7 +138,7 @@ export default function AdminMessages() {
           </button>
         </div>
 
-        <div className="admin-search-bar" style={{ marginTop: 16, marginBottom: 20 }}>
+        <div className="admin-search-bar">
           <input
             type="text"
             placeholder="Rechercher par nom, e-mail ou contenu du message..."
@@ -123,6 +146,17 @@ export default function AdminMessages() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="admin-search-input"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              className="admin-search-clear-btn"
+              onClick={() => setSearchQuery('')}
+              title="Effacer la recherche"
+              aria-label="Effacer la recherche"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
         {error && <p className="admin-error">{error}</p>}
@@ -136,7 +170,11 @@ export default function AdminMessages() {
         ) : (
           <div className="admin-messages-list">
             {filteredMessages.map((msg) => (
-              <article key={msg.id} className="admin-message-card">
+              <article
+                key={msg.id}
+                id={`msg-${msg.id}`}
+                className={`admin-message-card ${activeHighlightId === msg.id ? 'notification-highlight' : ''}`}
+              >
                 <div className="admin-message-header-row">
                   <div className="admin-message-sender-info">
                     <strong className="admin-message-author">

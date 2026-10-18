@@ -1,6 +1,6 @@
 import { eq, and, inArray, desc, sql } from 'drizzle-orm';
 import { db } from '../db/orm.js';
-import { orders, orderItems, orderExchanges, exchangeItems, productVariants, products } from '../models/index.js';
+import { orders, orderItems, orderExchanges, exchangeItems, orderRefunds, refundItems, productVariants, products, governorates } from '../models/index.js';
 
 function parseCustomerName(fullName = '') {
   const parts = (fullName || '').trim().split(/\s+/);
@@ -10,21 +10,76 @@ function parseCustomerName(fullName = '') {
   };
 }
 
-function formatOrder(order, items = [], exchanges = []) {
+export function calculateOrderCustomerAmountToPay(order) {
+  return parseFloat(order?.totalAmount ?? order?.total) || 0;
+}
+
+export function calculateExchangeCustomerAmountToPay(exchange, previousSubtotal = 0) {
+  const newSubtotal = parseFloat(exchange?.subtotal) || 0;
+  const prevSubtotal = parseFloat(previousSubtotal) || 0;
+  const productDiff = Math.max(0, newSubtotal - prevSubtotal);
+  const deliveryFee = parseFloat(exchange?.deliveryFee) || 0;
+  return productDiff + deliveryFee;
+}
+
+export function calculateRefundCustomerAmountToPay(refund) {
+  return parseFloat(refund?.deliveryFee) || 0;
+}
+
+// Retain calculatePayableAmount for any legacy callers, delegating to operation-specific calculation
+export function calculatePayableAmount(params) {
+  if (params && params.orderTotal !== undefined && !params.asOfDate && !params.asOfExchangeSequence && !params.exchanges?.length && !params.refunds?.length) {
+    return parseFloat(params.orderTotal) || 0;
+  }
+  return parseFloat(params?.orderTotal) || 0;
+}
+
+function formatOrder(order, items = [], exchanges = [], refunds = [], gov = null) {
   if (!order) return null;
   const { firstName, lastName } = parseCustomerName(order.customerName);
+  const orderCustomerAmount = calculateOrderCustomerAmountToPay(order);
+
+  // Sort exchanges chronologically / by sequence to track previous subtotal accurately
+  const sortedExchangesAsc = [...exchanges].sort((a, b) => {
+    const seqA = a.exchangeSequence !== undefined && a.exchangeSequence !== null ? Number(a.exchangeSequence) : 0;
+    const seqB = b.exchangeSequence !== undefined && b.exchangeSequence !== null ? Number(b.exchangeSequence) : 0;
+    if (seqA !== seqB) return seqA - seqB;
+    return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+  });
+
+  const exchangeAmountMap = new Map();
+  let runningPreviousSubtotal = parseFloat(order.subtotal) || 0;
+
+  for (const ex of sortedExchangesAsc) {
+    const exCustomerAmount = calculateExchangeCustomerAmountToPay(ex, runningPreviousSubtotal);
+    exchangeAmountMap.set(ex.id, exCustomerAmount);
+    runningPreviousSubtotal = parseFloat(ex.subtotal) || 0;
+  }
+
+  const govName = gov?.name || '';
+  const streetAddress = order.shippingAddress || '';
+  const fullAddress = govName
+    ? (streetAddress.startsWith(`${govName} — `) ? streetAddress : `${govName} — ${streetAddress}`)
+    : streetAddress;
+
   return {
     id: order.id,
     orderNumber: order.orderNumber,
     userId: order.userId,
     guestSessionId: order.guestSessionId,
+    governorateId: order.governorateId,
+    governorate: gov ? { id: gov.id, name: gov.name, code: gov.code } : null,
     customer: {
       firstName,
       lastName,
       name: order.customerName,
       email: order.customerEmail,
       phone: order.customerPhone,
-      address: order.shippingAddress,
+      address: fullAddress, // Presentation-time composed address
+      shippingAddress: streetAddress,
+      streetAddress,
+      governorate: govName,
+      governorateId: order.governorateId,
     },
     items: items.map((i) => ({
       id: i.id,
@@ -39,14 +94,20 @@ function formatOrder(order, items = [], exchanges = []) {
     subtotal: parseFloat(order.subtotal),
     deliveryFee: parseFloat(order.deliveryFee),
     total: parseFloat(order.totalAmount),
-    orderSource: order.orderSource,
+    customerAmountToPay: orderCustomerAmount,
+    finalCustomerPayableAmount: orderCustomerAmount,
     status: order.status === 'processing' ? 'pending' : order.status,
     exchanges: exchanges.map((e) => {
       const { firstName: exFirst, lastName: exLast } = parseCustomerName(e.customerName);
+      const exPayable = exchangeAmountMap.has(e.id)
+        ? exchangeAmountMap.get(e.id)
+        : calculateExchangeCustomerAmountToPay(e, order.subtotal);
+
       return {
         id: e.id,
         exchangeNumber: e.exchangeNumber,
         exchangeSequence: e.exchangeSequence,
+        paymentResponsibility: e.paymentResponsibility || 'customer_paid',
         customer: {
           firstName: exFirst,
           lastName: exLast,
@@ -68,7 +129,42 @@ function formatOrder(order, items = [], exchanges = []) {
         subtotal: parseFloat(e.subtotal),
         deliveryFee: parseFloat(e.deliveryFee),
         total: parseFloat(e.totalAmount),
+        productAmountAdded: parseFloat(e.productAmountAdded) || 0,
+        productRefundObligation: parseFloat(e.productRefundObligation) || 0,
+        customerAmountToPay: exPayable,
+        finalCustomerPayableAmount: exPayable,
         createdAt: e.createdAt,
+      };
+    }),
+    refunds: refunds.map((r) => {
+      const refPayable = calculateRefundCustomerAmountToPay(r);
+
+      return {
+        id: r.id,
+        refundNumber: r.refundNumber,
+        paymentResponsibility: r.paymentResponsibility || (parseFloat(r.deliveryFee) === 0 ? 'silky_paid' : 'customer_paid'),
+        refundAmount: parseFloat(r.refundAmount),
+        deliveryFee: parseFloat(r.deliveryFee),
+        carrierCost: parseFloat(r.carrierCost),
+        customerAmountToPay: refPayable,
+        finalCustomerPayableAmount: refPayable,
+        customer: {
+          name: r.customerName,
+          email: r.customerEmail,
+          phone: r.customerPhone,
+          address: r.shippingAddress,
+        },
+        items: (r.items || []).map((ri) => ({
+          id: ri.id,
+          variantId: ri.variantId,
+          name: ri.productTitle,
+          variantLabel: ri.variantLabel,
+          image: ri.imageUrl,
+          quantity: ri.quantity,
+          price: parseFloat(ri.unitPrice),
+          total: parseFloat(ri.unitPrice) * ri.quantity,
+        })),
+        createdAt: r.createdAt,
       };
     }),
     createdAt: order.createdAt,
@@ -105,6 +201,12 @@ export const orderRepository = {
     const [order] = await tx.select().from(orders).where(eq(orders.id, id));
     if (!order) return null;
 
+    let gov = null;
+    if (order.governorateId) {
+      const [govRow] = await tx.select().from(governorates).where(eq(governorates.id, order.governorateId));
+      gov = govRow || null;
+    }
+
     const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, id));
 
     const exchangeRows = await tx.select().from(orderExchanges)
@@ -117,7 +219,17 @@ export const orderRepository = {
       fullExchanges.push({ ...ex, items: eItems });
     }
 
-    return formatOrder(order, items, fullExchanges);
+    const refundRows = await tx.select().from(orderRefunds)
+      .where(eq(orderRefunds.orderId, id))
+      .orderBy(desc(orderRefunds.createdAt));
+
+    const fullRefunds = [];
+    for (const ref of refundRows) {
+      const rItems = await tx.select().from(refundItems).where(eq(refundItems.refundId, ref.id));
+      fullRefunds.push({ ...ref, items: rItems });
+    }
+
+    return formatOrder(order, items, fullExchanges, fullRefunds, gov);
   },
 
   async findByIdForUpdate(id, tx = db) {
@@ -131,7 +243,7 @@ export const orderRepository = {
     return tx.select().from(productVariants).where(inArray(productVariants.id, variantIds)).for('update');
   },
 
-  async createOrder({ orderNumber, userId = null, guestSessionId = null, customerName, customerEmail = null, customerPhone, shippingAddress, subtotal, deliveryFee = 0, totalAmount, orderSource = 'web', status = 'pending' }, items = [], tx = db) {
+  async createOrder({ orderNumber, userId = null, guestSessionId = null, customerName, customerEmail = null, customerPhone, governorateId, shippingAddress, subtotal, deliveryFee = 0, totalAmount, status = 'pending' }, items = [], tx = db) {
     const [newOrder] = await tx.insert(orders).values({
       orderNumber,
       userId,
@@ -139,11 +251,11 @@ export const orderRepository = {
       customerName,
       customerEmail,
       customerPhone,
+      governorateId,
       shippingAddress,
       subtotal: subtotal.toString(),
       deliveryFee: deliveryFee.toString(),
       totalAmount: totalAmount.toString(),
-      orderSource,
       status,
     }).returning();
 

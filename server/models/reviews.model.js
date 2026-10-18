@@ -45,6 +45,12 @@ export const reviews = pgTable(
         onDelete: 'cascade',
       }),
 
+    guestSessionId: uuid('guest_session_id'),
+
+    email: varchar('email', {
+      length: 255,
+    }),
+
     authorName: varchar('author_name', {
       length: 255,
     }).default('Client').notNull(),
@@ -82,6 +88,10 @@ export const reviews = pgTable(
       table.userId
     ),
 
+    index('idx_reviews_guest_session_id')
+      .on(table.guestSessionId)
+      .where(sql`${table.guestSessionId} IS NOT NULL`),
+
     index('idx_reviews_is_approved')
       .on(table.isApproved)
       .where(sql`${table.isApproved} = true`),
@@ -105,6 +115,13 @@ export const storeReviews = pgTable(
   'store_reviews',
   {
     id: uuid('id').defaultRandom().primaryKey(),
+
+    userId: uuid('user_id')
+      .references(() => users.id, {
+        onDelete: 'set null',
+      }),
+
+    guestSessionId: uuid('guest_session_id'),
 
     authorName: varchar('author_name', {
       length: 255,
@@ -136,6 +153,14 @@ export const storeReviews = pgTable(
     index('idx_store_reviews_status').on(
       table.status
     ),
+
+    index('idx_store_reviews_user_id')
+      .on(table.userId)
+      .where(sql`${table.userId} IS NOT NULL`),
+
+    index('idx_store_reviews_guest_session_id')
+      .on(table.guestSessionId)
+      .where(sql`${table.guestSessionId} IS NOT NULL`),
 
     index('idx_store_reviews_created_at').on(
       table.createdAt
@@ -185,6 +210,16 @@ export const reviewsRelations = relations(
 
     user: one(users, {
       fields: [reviews.userId],
+      references: [users.id],
+    }),
+  })
+);
+
+export const storeReviewsRelations = relations(
+  storeReviews,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [storeReviews.userId],
       references: [users.id],
     }),
   })

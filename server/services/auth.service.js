@@ -75,6 +75,7 @@ export async function registerUser({ identifier, email, password, fullName, phon
     }, tx);
 
     await mergeGuestSessionIntoUser(created.id, guestSessionId, tx);
+
     return created;
   });
 
@@ -242,6 +243,10 @@ export async function updateProfile(userId, { fullName, phoneNumber, email }) {
     }
   }
 
+  if (!finalEmail && !finalPhone) {
+    throw new AppError('Vous devez conserver au moins un e-mail ou un numéro de téléphone.', 400);
+  }
+
   const updated = await userRepository.updateProfile(userId, {
     fullName: fullName.trim(),
     phoneNumber: finalPhone,
@@ -303,4 +308,3 @@ export async function adminPanelLogin(password) {
   const token = signAccessToken(admin);
   return { token, user: sanitizeUser(admin) };
 }
-

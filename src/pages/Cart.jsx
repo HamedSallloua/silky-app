@@ -3,10 +3,27 @@ import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { formatPrice } from '../utils/formatPrice';
 import '../styles/cart.css';
+import '../styles/home.css';
 
 export default function Cart() {
   const { isAdmin } = useAuth();
   const { items, deliveryFee, subtotal, total, itemCount, updateQuantity, removeItem, loading, error } = useCart();
+
+  if (isAdmin) {
+    return (
+      <main className="collections_wrapper" style={{ minHeight: 400, paddingTop: 40 }}>
+        <h1 className="collection_title">Panier</h1>
+        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <p style={{ fontSize: 16, color: '#b00020', marginBottom: 24 }}>
+            Les administrateurs ne peuvent pas passer de commandes.
+          </p>
+          <Link to="/admin" className="tout_button">
+            Retour au panneau d&apos;administration
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main>
@@ -115,15 +132,9 @@ export default function Cart() {
                 <span className="total-amount">{formatPrice(total)}</span>
               </div>
 
-              {isAdmin ? (
-                <p style={{ color: '#b00020', textAlign: 'center', marginTop: 16, fontSize: 13 }}>
-                  Les administrateurs ne peuvent pas passer de commandes.
-                </p>
-              ) : (
-                <Link to="/checkout" className="submit-btn" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-                  Confirmer la commande
-                </Link>
-              )}
+              <Link to="/checkout" className="submit-btn" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+                Confirmer la commande
+              </Link>
             </div>
           </div>
         )}

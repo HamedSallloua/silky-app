@@ -62,14 +62,14 @@ export async function getTransporter() {
  * @param {string} options.html - HTML email body.
  * @param {string} [options.text] - Plain text fallback.
  */
-export async function sendEmail({ to, subject, html, text }) {
+export async function sendEmail({ to, subject, html, text, replyTo }) {
   if (!to || typeof to !== 'string' || !to.trim()) {
     throw new Error("L'adresse du destinataire est requise pour envoyer un e-mail.");
   }
 
   const transport = await getTransporter();
 
-  const info = await transport.sendMail({
+  const mailOptions = {
     from: env.emailFrom,
     to: to.trim(),
     subject,
@@ -90,7 +90,14 @@ export async function sendEmail({ to, subject, html, text }) {
         contentDisposition: 'inline',
       },
     ],
-  });
+  };
+
+  const resolvedReplyTo = replyTo || env.emailReplyTo;
+  if (resolvedReplyTo) {
+    mailOptions.replyTo = resolvedReplyTo;
+  }
+
+  const info = await transport.sendMail(mailOptions);
 
   const preview = nodemailer.getTestMessageUrl(info);
   if (preview) {

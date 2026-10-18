@@ -16,6 +16,20 @@
   height: 100%;
   cursor: grab;
   user-select: none;
+  -webkit-user-select: none;
+}
+
+.infinite_marquee.horizontal .infinite_marquee_viewport {
+  touch-action: pan-y;
+}
+
+.infinite_marquee.vertical .infinite_marquee_viewport {
+  touch-action: pan-x;
+}
+
+.infinite_marquee_viewport:active,
+.infinite_marquee_viewport.is_dragging {
+  cursor: grabbing;
 }
 
 /* Gallery-specific: marquee and track fill the wrapper height */
@@ -34,10 +48,6 @@
 
 .gallery_marquee .infinite_marquee_sequence {
   height: 100%;
-}
-
-.infinite_marquee_viewport:active {
-  cursor: grabbing;
 }
 
 .infinite_marquee_track {
@@ -89,9 +99,11 @@
   color: #111111;
   font-size: 13px;
   line-height: 1;
+  padding: 0;
+  user-select: none;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.2s ease, background-color 0.2s ease;
+  transition: opacity 0.25s ease, transform 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -107,6 +119,25 @@
   background: #ffffff;
   color: var(--color-primary, #8D191C);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.ticker_arrow_btn:active {
+  background: #ffffff;
+  color: var(--color-primary, #8D191C);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
+.ticker_arrow_btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(141, 25, 28, 0.25), 0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+.ticker_arrow_btn:disabled,
+.ticker_arrow_btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
 }
 
 .ticker_arrow_left {
@@ -129,6 +160,14 @@
   transform: translateY(-50%) scale(1.12);
 }
 
+.ticker_arrow_left:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
+.ticker_arrow_right:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
 .ticker_arrow_up {
   top: 10px;
   left: 50%;
@@ -147,6 +186,22 @@
 
 .ticker_arrow_down:hover {
   transform: translateX(-50%) scale(1.12);
+}
+
+.ticker_arrow_up:active {
+  transform: translateX(-50%) scale(0.92);
+}
+
+.ticker_arrow_down:active {
+  transform: translateX(-50%) scale(0.92);
+}
+
+.ticker_arrow_icon_vertical {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(90deg);
+  line-height: 1;
 }
 
 @media (pointer: coarse) {
@@ -273,6 +328,10 @@
   aspect-ratio: 4 / 5;
   object-fit: cover;
   display: block;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 /* --- Right Side: Reviews Text Marquee --- */

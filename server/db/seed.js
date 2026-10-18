@@ -340,7 +340,6 @@ async function seedOrders(client, catalogMeta, customerIds) {
       customer_phone: '96746971',
       subtotal: blush.effectivePrice,
       total: blush.effectivePrice + deliveryFee,
-      order_source: 'web',
       status: 'processing',
       items: [
         {
@@ -361,7 +360,6 @@ async function seedOrders(client, catalogMeta, customerIds) {
       customer_phone: '21659143',
       subtotal: enfant.effectivePrice,
       total: enfant.effectivePrice + deliveryFee,
-      order_source: 'instagram',
       status: 'completed',
       items: [
         {
@@ -382,7 +380,6 @@ async function seedOrders(client, catalogMeta, customerIds) {
       customer_phone: '97539279',
       subtotal: comfy.effectivePrice * 2,
       total: comfy.effectivePrice * 2 + deliveryFee,
-      order_source: 'whatsapp',
       status: 'pending',
       items: [
         {
@@ -404,7 +401,6 @@ async function seedOrders(client, catalogMeta, customerIds) {
       customer_phone: '90000000',
       subtotal: blush.effectivePrice,
       total: blush.effectivePrice + deliveryFee,
-      order_source: 'phone',
       status: 'cancelled',
       items: [
         {
@@ -425,8 +421,8 @@ async function seedOrders(client, catalogMeta, customerIds) {
       INSERT INTO orders (
         order_number, user_id, guest_session_id,
         customer_name, customer_email, customer_phone, shipping_address,
-        subtotal, delivery_fee, total_amount, order_source, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        subtotal, delivery_fee, total_amount, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING id
       `,
       [
@@ -440,7 +436,6 @@ async function seedOrders(client, catalogMeta, customerIds) {
         order.subtotal,
         deliveryFee,
         order.total,
-        order.order_source,
         order.status,
       ],
     );

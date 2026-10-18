@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import ProductPrice from '../components/ProductPrice';
 import ProductBadges from '../components/ProductBadges';
-import { useCart } from '../context/CartContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { useProducts } from '../context/ProductsContext';
 import { useAuth } from '../context/AuthContext';
@@ -10,61 +9,53 @@ import '../styles/home.css';
 
 export default function Favorites() {
   const { isAdmin } = useAuth();
-  const { favoriteIds, removeFavorite, loading: favoritesLoading, error: favoritesError } = useFavorites();
-  const { getProduct, loading } = useProducts();
-  const { addItem } = useCart();
-  const [addedId, setAddedId] = useState(null);
+  const { items: favoriteItems, removeFavorite, loading: favoritesLoading, error: favoritesError } = useFavorites();
+  const { getProduct, loading: productsLoading } = useProducts();
   const [removingId, setRemovingId] = useState(null);
 
-  const favorites = favoriteIds.map((id) => getProduct(id)).filter(Boolean);
+  const favorites = favoriteItems.map((fav) => {
+    const product = getProduct(fav.productId);
+    const colorObj = product?.colors?.find((c) => c.id === (fav.colorSlug || fav.colorId)) || null;
+    const colorName = fav.colorName || colorObj?.name || (typeof colorObj === 'string' ? colorObj : '');
+    const size = fav.size || null;
+    const image = fav.image || colorObj?.thumbnail || colorObj?.image || product?.collectionImage || product?.mainImage || '/pictures/femme_example.jpg';
+    const price = fav.price || product?.price || 0;
+    const discount = fav.discount || product?.discount || 0;
+    const effectivePrice = fav.effectivePrice || (discount > 0 ? price - discount : price);
 
-  const handleRemove = async (e, productId) => {
+    return {
+      favoriteId: fav.id,
+      id: fav.id,
+      productId: fav.productId,
+      variantId: fav.variantId || null,
+      name: fav.name || product?.name || '',
+      price,
+      discount,
+      effectivePrice,
+      image,
+      colorId: fav.colorSlug || fav.colorId || colorObj?.id || null,
+      colorName,
+      size,
+      isHidden: product?.isHidden,
+      product: product || null,
+    };
+  });
+
+  const handleRemove = async (e, fav) => {
     e.preventDefault();
     e.stopPropagation();
-    setRemovingId(productId);
+    const removeKey = fav.favoriteId || fav.variantId || fav.productId;
+    setRemovingId(removeKey);
     try {
-      await removeFavorite(productId);
+      await removeFavorite({
+        favoriteId: fav.favoriteId,
+        variantId: fav.variantId,
+        productId: fav.productId,
+      });
     } catch (err) {
       console.error('Error removing favorite:', err);
     } finally {
       setRemovingId(null);
-    }
-  };
-
-  const handleAddToCart = async (e, product) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const variant = product.variants?.[0];
-    const colorObj = product.colors?.[0];
-    const colorId =
-      variant?.colorSlug ||
-      colorObj?.id ||
-      (typeof colorObj === 'string' ? colorObj : null);
-    const colorName = colorObj?.name || (typeof colorObj === 'string' ? colorObj : '');
-    const size = variant?.size || product.sizes?.[0] || null;
-    const parts = [];
-    if (colorName) parts.push(colorName);
-    if (size) parts.push(`Taille ${size}`);
-    const details = parts.join(' · ') || 'Standard';
-
-    try {
-      await addItem({
-        productId: product.id,
-        name: product.name,
-        price: product.discount ? product.price - product.discount : product.price,
-        quantity: 1,
-        image: product.collectionImage || product.mainImage,
-        colorId,
-        colorName,
-        size,
-        details,
-      });
-
-      setAddedId(product.id);
-      setTimeout(() => setAddedId(null), 2000);
-    } catch (err) {
-      console.error('Error adding to cart:', err);
     }
   };
 
@@ -94,47 +85,45 @@ export default function Favorites() {
         </p>
       )}
 
-      {loading || favoritesLoading ? (
+      {favoritesLoading || productsLoading ? (
         <p style={{ textAlign: 'center' }}>Chargement...</p>
       ) : favorites.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 20px' }}>
           <p style={{ fontSize: 16, color: '#555', marginBottom: 24 }}>
             Votre liste de favoris est vide.
           </p>
-          <Link to="/" className="tout_button">
+          <Link to="/" className="secondary-btn" style={{ display: 'inline-block', marginTop: 16 }}>
             Découvrir nos produits
           </Link>
         </div>
       ) : (
         <div className="products_grid">
-          {favorites.map((product) => {
-            const variant = product.variants?.[0];
-            const colorObj = product.colors?.[0];
-            const colorName = colorObj?.name || (typeof colorObj === 'string' ? colorObj : '');
-            const size = variant?.size || product.sizes?.[0] || null;
+          {favorites.map((fav) => {
             const variantParts = [];
-            if (colorName) variantParts.push(`Couleur : ${colorName}`);
-            if (size) variantParts.push(`Taille : ${size}`);
+            if (fav.colorName) variantParts.push(`Couleur : ${fav.colorName}`);
+            if (fav.size) variantParts.push(`Taille : ${fav.size}`);
             const variantText = variantParts.join(' · ');
+            const cardKey = fav.favoriteId || `${fav.productId}-${fav.variantId || 'legacy'}`;
+            const actionKey = fav.favoriteId || fav.variantId || fav.productId;
 
             return (
-              <div key={product.id} className="product_card">
+              <div key={cardKey} className={`product_card${fav.isHidden ? ' product_card--hidden' : ''}`}>
                 <div className="product_image_container" style={{ position: 'relative' }}>
-                  <ProductBadges product={product} className="fav_product_badges" />
-                  <Link to={`/product/${product.id}`} className="product_card_link">
+                  <ProductBadges product={fav.product || fav} className="fav_product_badges" />
+                  <Link to={`/product/${fav.productId}`} className="product_card_link">
                     <img
-                      src={product.collectionImage || product.mainImage}
-                      alt={product.name}
+                      src={fav.image}
+                      alt={fav.name}
                       className="product_img"
                     />
                   </Link>
                   <button
                     type="button"
                     className="fav_image_remove_icon"
-                    onClick={(e) => handleRemove(e, product.id)}
+                    onClick={(e) => handleRemove(e, fav)}
                     title="Supprimer des favoris"
                     aria-label="Supprimer des favoris"
-                    disabled={removingId === product.id}
+                    disabled={removingId === actionKey}
                   >
                     <svg
                       width="16"
@@ -149,10 +138,10 @@ export default function Favorites() {
                 </div>
 
                 <div className="product_info" style={{ width: '100%' }}>
-                  <Link to={`/product/${product.id}`} className="product_card_link">
-                    <h3 className="product_name">{product.name}</h3>
+                  <Link to={`/product/${fav.productId}`} className="product_card_link">
+                    <h3 className="product_name">{fav.name}</h3>
                     <p className="product_price">
-                      <ProductPrice product={product} size="small" />
+                      <ProductPrice product={fav.product || fav} size="small" />
                     </p>
                     {variantText && <p className="fav_variant_info">{variantText}</p>}
                   </Link>
@@ -160,17 +149,9 @@ export default function Favorites() {
                   <div className="fav_card_actions">
                     <button
                       type="button"
-                      className="fav_add_to_cart_btn"
-                      onClick={(e) => handleAddToCart(e, product)}
-                      disabled={addedId === product.id}
-                    >
-                      {addedId === product.id ? '✓ Ajouté au panier' : 'Ajouter au panier'}
-                    </button>
-                    <button
-                      type="button"
                       className="fav_remove_btn"
-                      onClick={(e) => handleRemove(e, product.id)}
-                      disabled={removingId === product.id}
+                      onClick={(e) => handleRemove(e, fav)}
+                      disabled={removingId === actionKey}
                     >
                       Retirer des favoris
                     </button>

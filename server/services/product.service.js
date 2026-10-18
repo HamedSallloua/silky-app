@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { db } from '../db/orm.js';
 
 import {
@@ -5,6 +7,7 @@ import {
     getStockKey,
 } from '../repositories/product.repository.js';
 
+import { UPLOADS_DIR } from '../utils/upload.js';
 import { AppError } from '../utils/errors.js';
 
 /*
@@ -74,11 +77,11 @@ function getStockQuantity(
 
     const keys = [
         /*
-         * CURRENT FORMAT
+         * CURRENT FORMAT: color-size (e.g. noir-S)
          */
         getStockKey(
-            normalizedSize,
-            normalizedColor
+            normalizedColor,
+            normalizedSize
         ),
 
         /*
@@ -87,6 +90,10 @@ function getStockQuantity(
         `${normalizedColor}::${normalizedSize}`,
         `${normalizedColor}-${normalizedSize}`,
         `${normalizedSize}-${normalizedColor}`,
+        getStockKey(
+            normalizedSize,
+            normalizedColor
+        ),
     ];
 
     for (const key of keys) {
@@ -120,6 +127,22 @@ function normalizeProductInput(
     payload,
     existingProduct = null
 ) {
+    const isUpdate = existingProduct !== null;
+
+    const hasVariantInput =
+        payload.variants !== undefined ||
+        payload.colors !== undefined ||
+        payload.sizes !== undefined ||
+        payload.stock !== undefined;
+
+    const hasImageInput =
+        payload.images !== undefined ||
+        payload.mainImage !== undefined ||
+        payload.thumbnails !== undefined ||
+        payload.colors !== undefined ||
+        payload.collectionImage !== undefined ||
+        payload.collectionImageUrl !== undefined;
+
     const merged =
         existingProduct
             ? {
@@ -129,12 +152,60 @@ function normalizeProductInput(
             : payload;
 
     const title =
-        merged.name?.trim() ||
-        merged.title?.trim();
+        (merged.name ?? merged.title)?.toString().trim();
 
     if (!title) {
         throw new AppError(
-            'Product name is required',
+            'Le nom du produit est requis.',
+            400
+        );
+    }
+
+    const description =
+        (merged.description ?? '')?.toString().trim();
+
+    if (!description) {
+        throw new AppError(
+            'La description est requise.',
+            400
+        );
+    }
+
+    const price = Number(merged.price);
+    if (
+        merged.price === undefined ||
+        merged.price === null ||
+        merged.price === '' ||
+        Number.isNaN(price) ||
+        price <= 0
+    ) {
+        throw new AppError(
+            'Le prix est requis et doit être supérieur à 0.',
+            400
+        );
+    }
+
+    const discountAmount =
+        merged.discount === undefined ||
+        merged.discount === null ||
+        merged.discount === ''
+            ? (merged.discountAmount !== undefined &&
+               merged.discountAmount !== null &&
+               merged.discountAmount !== ''
+                ? Number(merged.discountAmount)
+                : 0)
+            : Number(merged.discount);
+
+    if (Number.isNaN(discountAmount) || discountAmount < 0) {
+        throw new AppError(
+            'La remise doit être positive.',
+            400
+        );
+    }
+
+    if (discountAmount > price) {
+        throw new AppError(
+            'La remise ne peut pas être supérieure au prix.',
             400
         );
     }
@@ -143,88 +214,75 @@ function normalizeProductInput(
      * Preserve existing slug.
      */
     const slug =
-        merged.slug?.trim() ||
-        existingProduct?.slug?.trim() ||
+        (merged.slug ?? existingProduct?.slug)?.toString().trim() ||
         slugify(title);
 
     if (!slug) {
         throw new AppError(
-            'Product slug is required',
+            'Le slug du produit est requis.',
             400
         );
     }
 
     /*
-     * Normalize colors.
+     * Active & Featured normalization.
      */
-    const colors =
-        (
-            Array.isArray(
-                merged.colors
-            )
-                ? merged.colors
-                : []
-        )
-            .filter(
-                color =>
-                    color?.name?.trim()
-            )
-            .map(
-                (color, index) => {
-                    const id =
-                        normalizeColorId(
-                            color,
-                            index
-                        );
+    let isActive;
+    if (payload.isActive !== undefined) {
+        isActive = Boolean(payload.isActive);
+    } else if (payload.is_active !== undefined) {
+        isActive = Boolean(payload.is_active);
+    } else if (payload.isHidden !== undefined) {
+        isActive = !Boolean(payload.isHidden);
+    } else if (existingProduct) {
+        isActive =
+            existingProduct.is_active !== undefined
+                ? Boolean(existingProduct.is_active)
+                : existingProduct.isActive !== undefined
+                    ? Boolean(existingProduct.isActive)
+                    : !Boolean(existingProduct.isHidden);
+    } else {
+        isActive = true;
+    }
 
-                    const name =
-                        color.name.trim();
+    let isFeatured;
+    if (payload.isFeatured !== undefined) {
+        isFeatured = Boolean(payload.isFeatured);
+    } else if (existingProduct) {
+        isFeatured = Boolean(existingProduct.isFeatured);
+    } else {
+        isFeatured = false;
+    }
 
-                    let images = [];
+    let collectionImageUrl = '';
+    if (payload.collectionImage !== undefined) {
+        collectionImageUrl = typeof payload.collectionImage === 'string'
+            ? payload.collectionImage.trim()
+            : payload.collectionImage
+                ? String(payload.collectionImage).trim()
+                : '';
+    } else if (payload.collectionImageUrl !== undefined) {
+        collectionImageUrl = typeof payload.collectionImageUrl === 'string'
+            ? payload.collectionImageUrl.trim()
+            : payload.collectionImageUrl
+                ? String(payload.collectionImageUrl).trim()
+                : '';
+    } else if (existingProduct) {
+        const existingVal =
+            existingProduct.collectionImageUrl ||
+            existingProduct.collectionImage ||
+            '';
+        collectionImageUrl = typeof existingVal === 'string' ? existingVal.trim() : '';
+    } else {
+        collectionImageUrl = '';
+    }
 
-                    if (
-                        Array.isArray(
-                            color.images
-                        )
-                    ) {
-                        images =
-                            color.images
-                                .map(
-                                    image =>
-                                        typeof image === 'string'
-                                            ? image.trim()
-                                            : ''
-                                )
-                                .filter(Boolean);
-                    }
-
-                    if (
-                        !images.length &&
-                        color.image?.trim()
-                    ) {
-                        images.push(
-                            color.image.trim()
-                        );
-                    }
-
-                    if (
-                        !images.length &&
-                        merged.mainImage?.trim()
-                    ) {
-                        images.push(
-                            merged.mainImage.trim()
-                        );
-                    }
-
-                    return {
-                        id,
-                        name,
-                        image:
-                            images[0] || '',
-                        images,
-                    };
-                }
-            );
+    if (!collectionImageUrl || !collectionImageUrl.trim()) {
+        throw new AppError(
+            'Veuillez ajouter une image de collection.',
+            400
+        );
+    }
 
     /*
      * Normalize sizes.
@@ -243,6 +301,71 @@ function normalizeProductInput(
             )
             .filter(Boolean);
 
+    if (!sizes.length) {
+        throw new AppError(
+            'Veuillez ajouter au moins une taille.',
+            400
+        );
+    }
+
+    /*
+     * Normalize colors (Thumbnail + Gallery model).
+     */
+    const rawColors = Array.isArray(merged.colors) ? merged.colors : [];
+    const colors = [];
+
+    for (let i = 0; i < rawColors.length; i++) {
+        const color = rawColors[i];
+        const name = (color?.name || '').toString().trim();
+        if (!name) {
+            throw new AppError(
+                `Le nom de la couleur ${i + 1} est requis.`,
+                400
+            );
+        }
+
+        const id = normalizeColorId(color, i);
+
+        let thumbnail = (color.thumbnail || color.image || '').toString().trim();
+        let gallery = [];
+
+        if (Array.isArray(color.gallery)) {
+            gallery = color.gallery
+                .map((img) => (typeof img === 'string' ? img.trim() : ''))
+                .filter(Boolean);
+        }
+
+        if (Array.isArray(color.images)) {
+            const rawImages = color.images
+                .map((img) => (typeof img === 'string' ? img.trim() : ''))
+                .filter(Boolean);
+
+            if (!thumbnail && rawImages.length > 0) {
+                thumbnail = rawImages[0];
+            }
+            if (gallery.length === 0 && rawImages.length > 1) {
+                gallery = rawImages.slice(1);
+            }
+        }
+
+        if (!thumbnail) {
+            throw new AppError(
+                `Veuillez ajouter une miniature pour la couleur "${name}".`,
+                400
+            );
+        }
+
+        const images = [thumbnail, ...gallery].filter(Boolean);
+
+        colors.push({
+            id,
+            name,
+            image: thumbnail,
+            thumbnail,
+            gallery,
+            images,
+        });
+    }
     /*
      * Stock object received from frontend.
      */
@@ -256,57 +379,84 @@ function normalizeProductInput(
      * Main image.
      */
     const mainImage =
-        merged.mainImage?.trim() ||
+        (payload.mainImage !== undefined ? payload.mainImage : merged.mainImage)?.toString().trim() ||
+        colors[0]?.thumbnail ||
         colors[0]?.image ||
         '';
-
-    const collectionImageUrl =
-        merged.collectionImage?.trim() ||
-        mainImage ||
-        null;
 
     /*
      * ========================================================
      * BUILD VARIANTS
      * ========================================================
-     *
-     * Every size/color combination becomes a DB variant.
      */
 
-    const variants = [];
+    let variants = undefined;
 
-    const targetSizes =
-        sizes.length
-            ? sizes
-            : [''];
+    if (!isUpdate || hasVariantInput) {
+        if (Array.isArray(payload.variants) && !Array.isArray(payload.colors)) {
+            variants = payload.variants.map((v, i) => {
+                const vSize = String(v.size ?? '').trim();
+                const vColorSlug = normalizeColorId(v, i);
+                const vColorName = (
+                    v.colorName ||
+                    v.colorSlug ||
+                    v.colorId ||
+                    vColorSlug ||
+                    ''
+                ).toString().trim();
+                const vColorImageUrl = v.colorImageUrl || v.thumbnail || v.image || null;
+                const vStockQuantity = Number.isFinite(
+                    Number(v.stockQuantity ?? v.stock)
+                )
+                    ? Math.max(0, Number(v.stockQuantity ?? v.stock))
+                    : 0;
+                const vSku =
+                    v.sku ||
+                    `${slug}-${vSize || 'default'}-${vColorSlug}`.toUpperCase();
 
-    for (const color of colors) {
-        for (const size of targetSizes) {
-            const stockQuantity =
-                getStockQuantity(
-                    stock,
-                    size,
-                    color.id
-                );
-
-            variants.push({
-                size,
-
-                colorSlug:
-                    color.id,
-
-                colorName:
-                    color.name,
-
-                colorImageUrl:
-                    color.image || null,
-
-                stockQuantity,
-
-                sku:
-                    `${slug}-${size || 'default'}-${color.id}`
-                        .toUpperCase(),
+                return {
+                    ...(v.id ? { id: v.id } : {}),
+                    size: vSize,
+                    colorSlug: vColorSlug,
+                    colorName: vColorName,
+                    colorImageUrl: vColorImageUrl,
+                    stockQuantity: vStockQuantity,
+                    sku: vSku,
+                };
             });
+        } else {
+            variants = [];
+            const targetSizes =
+                sizes.length
+                    ? sizes
+                    : [''];
+
+            for (const color of colors) {
+                for (const size of targetSizes) {
+                    const stockQuantity =
+                        getStockQuantity(
+                            stock,
+                            size,
+                            color.id
+                        );
+
+                    variants.push({
+                        size,
+                        colorSlug:
+                            color.id,
+                        colorName:
+                            color.name,
+                        colorImageUrl:
+                            color.thumbnail ||
+                            color.image ||
+                            null,
+                        stockQuantity,
+                        sku:
+                            `${slug}-${size || 'default'}-${color.id}`
+                                .toUpperCase(),
+                    });
+                }
+            }
         }
     }
 
@@ -316,182 +466,84 @@ function normalizeProductInput(
      * ========================================================
      */
 
-    const images = [];
+    let images = undefined;
 
-    const seenImages =
-        new Set();
+    if (!isUpdate || hasImageInput) {
+        images = [];
+        let sortOrder = 0;
+        let primarySet = false;
 
-    if (mainImage) {
-        images.push({
-            imageUrl:
-                mainImage,
+        for (const color of colors) {
+            for (const imgUrl of color.images) {
+                if (!imgUrl) continue;
+                const isPrimary = Boolean(
+                    mainImage &&
+                    imgUrl === mainImage &&
+                    !primarySet
+                );
+                if (isPrimary) {
+                    primarySet = true;
+                }
+                images.push({
+                    imageUrl: imgUrl,
+                    colorSlug: color.id,
+                    sortOrder: sortOrder++,
+                    isPrimary,
+                });
+            }
+        }
 
-            colorSlug:
-                null,
+        if (!primarySet && images.length > 0) {
+            images[0].isPrimary = true;
+        }
+    }
 
-            sortOrder:
-                0,
+    const categorySlug =
+        (merged.category ?? merged.categorySlug)?.toString().trim() ||
+        null;
 
-            isPrimary:
-                true,
-        });
+    const categoryId =
+        merged.categoryId ||
+        null;
 
-        seenImages.add(
-            `main:${mainImage}`
+    if (!categorySlug && !categoryId) {
+        throw new AppError(
+            'Veuillez sélectionner une catégorie.',
+            400
         );
     }
 
-    let sortOrder =
-        images.length;
-
-    /*
-     * Thumbnails.
-     */
-    if (
-        Array.isArray(
-            merged.thumbnails
-        )
-    ) {
-        for (
-            const url
-            of merged.thumbnails
-        ) {
-            if (
-                typeof url !== 'string'
-            ) {
-                continue;
-            }
-
-            const imageUrl =
-                url.trim();
-
-            if (!imageUrl) {
-                continue;
-            }
-
-            if (
-                imageUrl === mainImage
-            ) {
-                continue;
-            }
-
-            const key =
-                `thumbnail:${imageUrl}`;
-
-            if (
-                seenImages.has(key)
-            ) {
-                continue;
-            }
-
-            seenImages.add(key);
-
-            images.push({
-                imageUrl,
-
-                colorSlug:
-                    null,
-
-                sortOrder:
-                    sortOrder++,
-
-                isPrimary:
-                    false,
-            });
-        }
-    }
-
-    /*
-     * Color-specific images.
-     */
-    for (
-        const color
-        of colors
-    ) {
-        for (
-            const imageUrl
-            of color.images
-        ) {
-            if (!imageUrl) {
-                continue;
-            }
-
-            const key =
-                `${color.id}:${imageUrl}`;
-
-            if (
-                seenImages.has(key)
-            ) {
-                continue;
-            }
-
-            seenImages.add(key);
-
-            images.push({
-                imageUrl,
-
-                colorSlug:
-                    color.id,
-
-                sortOrder:
-                    sortOrder++,
-
-                isPrimary:
-                    false,
-            });
-        }
-    }
-
-    return {
+    const result = {
         title,
 
         slug,
 
-        description:
-            merged.description?.trim() || '',
+        description,
 
-        price:
-            merged.price === undefined ||
-            merged.price === null ||
-            merged.price === ''
-                ? 0
-                : Number(
-                    merged.price
-                ),
+        price,
 
-        discountAmount:
-            merged.discount === undefined ||
-            merged.discount === null ||
-            merged.discount === ''
-                ? 0
-                : Number(
-                    merged.discount
-                ),
+        discountAmount,
 
-        categorySlug:
-            merged.category?.trim() ||
-            null,
+        categorySlug,
 
-        categoryId:
-            merged.categoryId ||
-            null,
+        categoryId,
 
         collectionImageUrl,
 
-        isFeatured:
-            Boolean(
-                merged.isFeatured
-            ),
+        isFeatured,
 
-        isActive:
-            !Boolean(
-                merged.isHidden
-            ),
-
-        variants,
-
-        images,
+        isActive,
     };
+
+    if (variants !== undefined) {
+        result.variants = variants;
+    }
+
+    if (images !== undefined) {
+        result.images = images;
+    }
+
+    return result;
 }
 
 /*
@@ -774,43 +826,46 @@ export async function updateProduct(
                 }
             }
 
+            const updatePayload = {
+                title:
+                    input.title,
+
+                slug:
+                    input.slug,
+
+                description:
+                    input.description,
+
+                price:
+                    input.price,
+
+                discountAmount:
+                    input.discountAmount,
+
+                categoryId,
+
+                collectionImageUrl:
+                    input.collectionImageUrl,
+
+                isFeatured:
+                    input.isFeatured,
+
+                isActive:
+                    input.isActive,
+            };
+
+            if (input.variants !== undefined) {
+                updatePayload.variants = input.variants;
+            }
+
+            if (input.images !== undefined) {
+                updatePayload.images = input.images;
+            }
+
             return productRepository
                 .updateProduct(
                     id,
-                    {
-                        title:
-                            input.title,
-
-                        slug:
-                            input.slug,
-
-                        description:
-                            input.description,
-
-                        price:
-                            input.price,
-
-                        discountAmount:
-                            input.discountAmount,
-
-                        categoryId,
-
-                        collectionImageUrl:
-                            input.collectionImageUrl,
-
-                        isFeatured:
-                            input.isFeatured,
-
-                        isActive:
-                            input.isActive,
-
-                        variants:
-                            input.variants,
-
-                        images:
-                            input.images,
-                    },
-
+                    updatePayload,
                     tx
                 );
         }
@@ -826,21 +881,65 @@ export async function updateProduct(
 export async function deleteProduct(
     id
 ) {
-    const existing =
-        await productRepository.findById(
-            id
-        );
-
-    if (!existing) {
+    if (!id) {
         throw new AppError(
-            'Produit non trouvé',
-            404
+            'ID du produit requis',
+            400
         );
     }
 
-    return productRepository.deleteProduct(
-        id
-    );
+    return db.transaction(async (tx) => {
+        const existing =
+            await productRepository.findById(
+                id,
+                tx
+            );
+
+        if (!existing) {
+            throw new AppError(
+                'Produit non trouvé',
+                404
+            );
+        }
+
+        // Collect candidate media URLs from product, variants, product images, and product videos before deletion
+        const { collectionImageUrl, images, variants, videos } =
+            await productRepository.findProductImagesAndVariants(id, tx);
+
+        const candidateImageUrls = new Set();
+        if (collectionImageUrl) candidateImageUrls.add(collectionImageUrl);
+        for (const img of images) candidateImageUrls.add(img);
+        for (const img of variants) candidateImageUrls.add(img);
+        for (const vid of (videos || [])) candidateImageUrls.add(vid);
+
+        // Delete product from DB (cascades product_variants, product_images, cart_items, favourites, reviews)
+        const deleted = await productRepository.deleteProduct(
+            id,
+            tx
+        );
+
+        // Clean up orphan physical files from /server/uploads
+        for (const imgUrl of candidateImageUrls) {
+            if (typeof imgUrl !== 'string') continue;
+            const trimmed = imgUrl.trim();
+            if (trimmed.startsWith('/uploads/') || trimmed.startsWith('uploads/')) {
+                const isStillReferenced =
+                    await productRepository.isImageReferencedElsewhere(trimmed, null, tx);
+
+                if (!isStillReferenced) {
+                    const filename = path.basename(trimmed);
+                    const filePath = path.join(UPLOADS_DIR, filename);
+                    try {
+                        await fs.promises.unlink(filePath);
+                    } catch {
+                        // File may already have been removed or not exist on disk
+                    }
+                }
+            }
+        }
+
+        return deleted;
+    });
 }
 
 /*

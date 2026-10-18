@@ -89,12 +89,14 @@ export async function createReview(req, res) {
     return res.status(403).json({ error: 'Les administrateurs ne peuvent pas soumettre d\'avis.' });
   }
 
-  const { rating, comment, authorName } = req.body;
+  const { rating, comment, authorName, email } = req.body;
 
   try {
     const result = await reviewService.createProductReview({
       productId: req.params.id,
       userId: req.user?.id || null,
+      guestSessionId: req.user?.id ? null : (req.guestSessionId || null),
+      email: req.user?.id ? null : (email || null),
       authorName: req.user?.full_name || req.user?.fullName || authorName,
       rating,
       comment,

@@ -222,6 +222,17 @@ body {
   text-decoration: none;
   margin-top: 16px;
   width: 100%;
+  box-sizing: border-box;
+  transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.1s ease;
+}
+
+.secondary-btn:hover {
+  background-color: color-mix(in srgb, var(--color-secondary) 80%, #ccc);
+  color: var(--color-primary);
+}
+
+.secondary-btn:active {
+  transform: scale(0.99);
 }
 
 /* ---------------------------------------------------- */

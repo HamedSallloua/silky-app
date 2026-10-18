@@ -61,12 +61,11 @@ async function runEdgeCaseTests() {
 
   const prodA = productList[0];
   const prodB = productList[1];
-  const prodC = productList[1]; // fallback to prodB if 2 products
+  const prodC = productList[2] || productList[0];
 
   const varA = prodA.variants[0];
   const varB = prodB.variants[0];
-  const varC = prodB.variants[1] || prodB.variants[0];
-
+  const varC = (prodC.productId !== prodB.productId && prodC.variants[0]) ? prodC.variants[0] : (prodB.variants[1] || prodA.variants[1]);
 
   console.log(`Product A: "${prodA.title}" (Effective Price: ${prodA.effectivePrice} TND), Variant ID: ${varA}`);
   console.log(`Product B: "${prodB.title}" (Effective Price: ${prodB.effectivePrice} TND), Variant ID: ${varB}`);
@@ -86,7 +85,8 @@ async function runEdgeCaseTests() {
     phoneNumber: '99887766',
     orderSource: source,
     customerEmail: 'edgecase.test@example.com',
-    shippingAddress: 'Tunis — Rue Test 42',
+    governorate: 'Tunis',
+    shippingAddress: 'Rue Test 42',
     deliveryFee,
     items: [{ variantId: varA, quantity: 2 }], // A x 2
   });
@@ -115,47 +115,42 @@ async function runEdgeCaseTests() {
 
   const baseStats = await checkStats();
 
-  // Test 1: Same variant, quantity changes
-  console.log('\n--- 1. Same variant, quantity changes (A x 2 -> A x 3) ---');
+  let cumulativeExchangeFees = 0;
+  const initialOrderTotal = 2 * prodA.effectivePrice + deliveryFee;
+
+  // Test 1: Same variant, quantity decrease (A x 2 -> A x 1 via keep 1)
+  console.log('\n--- 1. Same variant, quantity decrease (A x 2 -> A x 1 via keep 1) ---');
   await exchangeService.createExchange({
     orderId: order.id,
     customer: { customerName: 'Edge Case Test Customer', phoneNumber: '99887766', shippingAddress: 'Tunis — Rue Test 42' },
     deliveryFee,
-    items: [{ variantId: varA, quantity: 3 }],
+    items: [{ variantId: varA, action: 'keep', quantity: 1 }],
   });
+  cumulativeExchangeFees += deliveryFee;
 
   let s = await checkStats();
-  console.log(`Qty A: ${s.qtyA} (Expected: +1 relative to original baseline)`);
-  console.log(`Total Revenue: ${s.kpi.totalRevenue} TND (Expected: baseline + ${prodA.effectivePrice})`);
-  if (s.qtyA !== baseStats.qtyA + 1) throw new Error('Test 1 failed: Qty A expected +1');
-  if (s.kpi.totalRevenue !== baseStats.kpi.totalRevenue + prodA.effectivePrice) throw new Error('Test 1 failed: Revenue diff incorrect');
-
-  console.log('\n--- 1b. Same variant, quantity decreases (A x 3 -> A x 1) ---');
-  await exchangeService.createExchange({
-    orderId: order.id,
-    customer: { customerName: 'Edge Case Test Customer', phoneNumber: '99887766', shippingAddress: 'Tunis — Rue Test 42' },
-    deliveryFee,
-    items: [{ variantId: varA, quantity: 1 }],
-  });
-  s = await checkStats();
   console.log(`Qty A: ${s.qtyA} (Expected: baseline - 1)`);
-  if (s.qtyA !== baseStats.qtyA - 1) throw new Error('Test 1b failed: Qty A expected baseline - 1');
+  const expRev1 = baseStats.kpi.totalRevenue + ((1 * prodA.effectivePrice + deliveryFee + cumulativeExchangeFees) - initialOrderTotal);
+  console.log(`Total Revenue: ${s.kpi.totalRevenue} TND (Expected: ${expRev1})`);
+  if (s.qtyA !== baseStats.qtyA - 1) throw new Error('Test 1 failed: Qty A expected baseline - 1');
+  if (s.kpi.totalRevenue !== expRev1) throw new Error('Test 1 failed: Revenue diff incorrect');
 
-  // Test 2 & 3: Different products & quantities (A x 1 -> B x 2 + C x 1)
+  // Test 2 & 3: Different products & quantities (A x 1 -> B x 2 + C x 1 via add)
   console.log('\n--- 2 & 3. Different products & quantities (A x 1 -> B x 2 + C x 1) ---');
   await exchangeService.createExchange({
     orderId: order.id,
     customer: { customerName: 'Edge Case Test Customer', phoneNumber: '99887766', shippingAddress: 'Tunis — Rue Test 42' },
     deliveryFee,
-    items: [{ variantId: varB, quantity: 2 }, { variantId: varC, quantity: 1 }],
+    items: [{ variantId: varB, action: 'add', quantity: 2 }, { variantId: varC, action: 'add', quantity: 1 }],
   });
+  cumulativeExchangeFees += deliveryFee;
   s = await checkStats();
   console.log(`Qty A: ${s.qtyA}, Qty B: ${s.qtyB}, Qty C: ${s.qtyC}`);
   const expectedSubtotal = 2 * prodB.effectivePrice + 1 * prodC.effectivePrice;
-  const expectedRevDiff = (expectedSubtotal + deliveryFee) - (2 * prodA.effectivePrice + deliveryFee);
-  console.log(`Revenue Diff from original order: ${s.kpi.totalRevenue - baseStats.kpi.totalRevenue} (Expected: ${expectedRevDiff})`);
+  const expRev2 = baseStats.kpi.totalRevenue + ((expectedSubtotal + deliveryFee + cumulativeExchangeFees) - initialOrderTotal);
+  console.log(`Total Revenue: ${s.kpi.totalRevenue} (Expected: ${expRev2})`);
   if (s.qtyB < 2 || s.qtyC < 1) throw new Error('Test 2 & 3 failed: Quantities incorrect');
-  if (s.kpi.totalRevenue !== baseStats.kpi.totalRevenue + expectedRevDiff) throw new Error('Test 2 & 3 failed: Revenue incorrect');
+  if (s.kpi.totalRevenue !== expRev2) throw new Error('Test 2 & 3 failed: Revenue incorrect');
 
   // Test 4: Multiple products in one exchange (B x 2 + C x 1 -> B x 1 + A x 3)
   console.log('\n--- 4. Multiple products in one exchange (B x 2 + C x 1 -> B x 1 + A x 3) ---');
@@ -163,36 +158,40 @@ async function runEdgeCaseTests() {
     orderId: order.id,
     customer: { customerName: 'Edge Case Test Customer', phoneNumber: '99887766', shippingAddress: 'Tunis — Rue Test 42' },
     deliveryFee,
-    items: [{ variantId: varB, quantity: 1 }, { variantId: varA, quantity: 3 }],
+    items: [{ variantId: varB, action: 'keep', quantity: 1 }, { variantId: varA, action: 'add', quantity: 3 }],
   });
+  cumulativeExchangeFees += deliveryFee;
   s = await checkStats();
   console.log(`Qty A: ${s.qtyA}, Qty B: ${s.qtyB}, Qty C: ${s.qtyC}`);
   const expectedSubtotal4 = 1 * prodB.effectivePrice + 3 * prodA.effectivePrice;
-  const expectedRevDiff4 = (expectedSubtotal4 + deliveryFee) - (2 * prodA.effectivePrice + deliveryFee);
-  if (s.kpi.totalRevenue !== baseStats.kpi.totalRevenue + expectedRevDiff4) throw new Error('Test 4 failed: Revenue incorrect');
+  const expRev4 = baseStats.kpi.totalRevenue + ((expectedSubtotal4 + deliveryFee + cumulativeExchangeFees) - initialOrderTotal);
+  if (s.kpi.totalRevenue !== expRev4) throw new Error('Test 4 failed: Revenue incorrect');
 
-  // Test 5 & 6: Product removed / added completely
+  // Test 5 & 6: Product removed / added completely (B x 1 + A x 3 -> A x 3)
   console.log('\n--- 5 & 6. Product removed / added (B x 1 + A x 3 -> A x 3) ---');
   await exchangeService.createExchange({
     orderId: order.id,
     customer: { customerName: 'Edge Case Test Customer', phoneNumber: '99887766', shippingAddress: 'Tunis — Rue Test 42' },
     deliveryFee,
-    items: [{ variantId: varA, quantity: 3 }],
+    items: [{ variantId: varA, action: 'keep', quantity: 3 }],
   });
+  cumulativeExchangeFees += deliveryFee;
   s = await checkStats();
   console.log(`Qty B: ${s.qtyB} (B was removed completely)`);
 
-  // Test 7 & 8 & 21: Repeated exchange back to original product & Final-state equivalence
+  // Test 7 & 8 & 21: Repeated exchange back to original product (A x 3 -> A x 2 via keep 2)
   console.log('\n--- 7, 8 & 21. Repeated exchange back to original product (A x 3 -> A x 2) ---');
   await exchangeService.createExchange({
     orderId: order.id,
     customer: { customerName: 'Edge Case Test Customer', phoneNumber: '99887766', shippingAddress: 'Tunis — Rue Test 42' },
     deliveryFee,
-    items: [{ variantId: varA, quantity: 2 }],
+    items: [{ variantId: varA, action: 'keep', quantity: 2 }],
   });
+  cumulativeExchangeFees += deliveryFee;
   s = await checkStats();
-  console.log(`Cumulative Revenue: ${s.kpi.totalRevenue} TND (Expected: EXACT match to baseline ${baseStats.kpi.totalRevenue})`);
-  if (s.kpi.totalRevenue !== baseStats.kpi.totalRevenue) throw new Error('Test 7 & 8 failed: Cumulative revenue did not return to baseline!');
+  const expRev7 = baseStats.kpi.totalRevenue + ((2 * prodA.effectivePrice + deliveryFee + cumulativeExchangeFees) - initialOrderTotal);
+  console.log(`Cumulative Revenue: ${s.kpi.totalRevenue} TND (Expected: ${expRev7})`);
+  if (s.kpi.totalRevenue !== expRev7) throw new Error('Test 7 & 8 failed: Cumulative revenue mismatch!');
 
   // Test 10: Delivery fee changes
   console.log('\n--- 10. Delivery fee changes (+7 TND delivery fee) ---');
@@ -201,30 +200,34 @@ async function runEdgeCaseTests() {
     orderId: order.id,
     customer: { customerName: 'Edge Case Test Customer', phoneNumber: '99887766', shippingAddress: 'Tunis — Rue Test 42' },
     deliveryFee: newFee,
-    items: [{ variantId: varA, quantity: 2 }],
+    items: [{ variantId: varA, action: 'replace', quantity: 1 }],
   });
+  cumulativeExchangeFees += newFee;
   s = await checkStats();
-  console.log(`Total Revenue with new fee: ${s.kpi.totalRevenue} (Expected: baseline + 7)`);
-  if (s.kpi.totalRevenue !== baseStats.kpi.totalRevenue + 7) throw new Error('Test 10 failed: Delivery fee increase not reflected');
+  const expRev10 = baseStats.kpi.totalRevenue + ((2 * prodA.effectivePrice + deliveryFee + cumulativeExchangeFees) - initialOrderTotal);
+  console.log(`Total Revenue with new fee: ${s.kpi.totalRevenue} (Expected: ${expRev10})`);
+  if (s.kpi.totalRevenue !== expRev10) throw new Error('Test 10 failed: Delivery fee increase not reflected');
 
   // Revert delivery fee
   await exchangeService.createExchange({
     orderId: order.id,
     customer: { customerName: 'Edge Case Test Customer', phoneNumber: '99887766', shippingAddress: 'Tunis — Rue Test 42' },
     deliveryFee,
-    items: [{ variantId: varA, quantity: 2 }],
+    items: [{ variantId: varA, action: 'replace', quantity: 1 }],
   });
+  cumulativeExchangeFees += deliveryFee;
 
   // Test 16, 17 & 19: Order count, Customer count, Sales by source
   console.log('\n--- 16, 17 & 19. Order count, Customer count, Sales by source ---');
   s = await checkStats();
   console.log(`Total Orders: ${s.kpi.totalOrders} (Expected: ${baseStats.kpi.totalOrders})`);
   console.log(`Total Customers: ${s.kpi.totalCustomers} (Expected: ${baseStats.kpi.totalCustomers})`);
-  console.log(`Source Revenue (${source}): ${s.sourceRevenue} (Expected: ${baseStats.sourceRevenue})`);
+  const expSourceRev = baseStats.sourceRevenue - initialOrderTotal + (2 * prodA.effectivePrice + deliveryFee + cumulativeExchangeFees);
+  console.log(`Source Revenue (${source}): ${s.sourceRevenue} (Expected: ${expSourceRev})`);
 
   if (s.kpi.totalOrders !== baseStats.kpi.totalOrders) throw new Error('Test 16 failed: Order count changed!');
   if (s.kpi.totalCustomers !== baseStats.kpi.totalCustomers) throw new Error('Test 17 failed: Customer count changed!');
-  if (s.sourceRevenue !== baseStats.sourceRevenue) throw new Error('Test 19 failed: Source revenue incorrect!');
+  if (s.sourceRevenue !== expSourceRev) throw new Error('Test 19 failed: Source revenue incorrect!');
 
   console.log('\n====================================================');
   console.log('✅ ALL 22 EXCHANGE STATISTICS EDGE CASES VERIFIED SUCCESSFULLY!');

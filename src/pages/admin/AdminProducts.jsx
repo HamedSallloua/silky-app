@@ -4,6 +4,7 @@ import { useProducts } from '../../context/ProductsContext';
 import { buildStockMatrix } from '../../utils/stock';
 import { formatPrice } from '../../utils/formatPrice';
 import { getEffectivePrice } from '../../utils/price';
+import AdminProductReviewsSection from '../../components/AdminProductReviewsSection';
 
 const EMPTY_PRODUCT = {
   name: '',
@@ -12,10 +13,11 @@ const EMPTY_PRODUCT = {
   discount: 0,
   category: 'femme',
   mainImage: '',
-  colors: [{ id: '', name: '', image: '', images: [''] }],
+  colors: [{ id: '', name: '', thumbnail: '', gallery: [] }],
   sizes: [''],
   stock: {},
-  collectionImage: '/pictures/femme_example.jpg',
+  videos: [],
+  collectionImage: '',
   isHidden: false,
 };
 
@@ -26,18 +28,34 @@ function slugify(text) {
     .replace(/(^-|-$)/g, '');
 }
 
+function mapProductColorsToForm(rawColors = []) {
+  return rawColors.map((c, i) => {
+    const rawImages = (c.images || (c.image ? [c.image] : [])).filter(Boolean);
+    const thumbnail = (c.thumbnail || rawImages[0] || c.image || '').trim();
+    const gallery = (c.gallery || rawImages.slice(1)).map((g) => (typeof g === 'string' ? g.trim() : '')).filter(Boolean);
+    return {
+      id: c.id || slugify(c.name) || `color-${i}`,
+      name: (c.name || '').trim(),
+      thumbnail,
+      gallery,
+    };
+  });
+}
+
 function normalizeProduct(form) {
   const colors = form.colors
     .filter((c) => c.name.trim())
     .map((c, i) => {
-      const rawImages = (c.images || (c.image ? [c.image] : []))
-        .map((img) => (typeof img === 'string' ? img.trim() : ''))
-        .filter(Boolean);
+      const thumbnail = (c.thumbnail || '').trim();
+      const gallery = (c.gallery || []).map((g) => (typeof g === 'string' ? g.trim() : '')).filter(Boolean);
+      const images = [thumbnail, ...gallery].filter(Boolean);
       return {
         id: c.id || slugify(c.name) || `color-${i}`,
         name: c.name.trim(),
-        image: rawImages[0] || '',
-        images: rawImages.length ? rawImages : [''],
+        image: thumbnail,
+        thumbnail,
+        gallery,
+        images,
       };
     });
 
@@ -66,7 +84,7 @@ function normalizeProduct(form) {
     colors,
     sizes,
     stock,
-    collectionImage: form.collectionImage.trim() || mainImage || colors[0]?.image || '',
+    collectionImage: (form.collectionImage || '').trim(),
     isHidden: Boolean(form.isHidden),
   };
 }
@@ -91,14 +109,25 @@ async function uploadFile(file) {
   });
 }
 
-export default function AdminProducts() {
-  const { products, addProduct, updateProduct, deleteProduct } = useProducts();
+export default function AdminProducts({ highlightProductId = null, highlightReviewId = null }) {
+  const {
+    products,
+    addProduct,
+    updateProduct,
+    deleteProduct,
+    uploadProductVideo,
+    deleteProductVideo,
+  } = useProducts();
   const [selectedId, setSelectedId] = useState(products[0]?.id ?? null);
   const [isNew, setIsNew] = useState(false);
   const [form, setForm] = useState(null);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [mobileView, setMobileView] = useState('list'); // 'list' | 'form'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [videoToDelete, setVideoToDelete] = useState(null);
+  const [videoUploading, setVideoUploading] = useState(false);
 
   const selectProduct = (product) => {
     if (!product) return;
@@ -107,17 +136,24 @@ export default function AdminProducts() {
     setIsNew(false);
     setForm({
       ...latestProduct,
-      colors: (latestProduct.colors || []).map((c) => ({
-        ...c,
-        images: c.images?.length ? [...c.images] : [c.image || ''],
-      })),
+      colors: mapProductColorsToForm(latestProduct.colors),
       sizes: [...(latestProduct.sizes || [])],
       stock: { ...(latestProduct.stock || {}) },
+      videos: Array.isArray(latestProduct.videos) ? [...latestProduct.videos] : [],
       isHidden: latestProduct.isHidden === true || latestProduct.is_active === false,
     });
     setMessage('');
     setMobileView('form');
   };
+
+  useEffect(() => {
+    if (highlightProductId && products.length > 0) {
+      const match = products.find((p) => p.id === highlightProductId);
+      if (match) {
+        selectProduct(match);
+      }
+    }
+  }, [highlightProductId, products]);
 
   useEffect(() => {
     if (products.length === 0) return;
@@ -136,12 +172,10 @@ export default function AdminProducts() {
           if (!prevForm || prevForm.id !== target.id) {
             return {
               ...target,
-              colors: (target.colors || []).map((c) => ({
-                ...c,
-                images: c.images?.length ? [...c.images] : [c.image || ''],
-              })),
+              colors: mapProductColorsToForm(target.colors),
               sizes: [...(target.sizes || [])],
               stock: { ...(target.stock || {}) },
+              videos: Array.isArray(target.videos) ? [...target.videos] : [],
               isHidden: target.isHidden === true || target.is_active === false,
             };
           }
@@ -149,6 +183,7 @@ export default function AdminProducts() {
           return {
             ...prevForm,
             stock: { ...(target.stock || {}) },
+            videos: Array.isArray(target.videos) ? [...target.videos] : prevForm.videos || [],
           };
         });
       }
@@ -160,9 +195,10 @@ export default function AdminProducts() {
     setIsNew(true);
     setForm({
       ...EMPTY_PRODUCT,
-      colors: [{ id: '', name: '', image: '', images: [''] }],
+      colors: [{ id: '', name: '', thumbnail: '', gallery: [] }],
       sizes: [''],
       stock: {},
+      videos: [],
       isHidden: false,
     });
     setMessage('');
@@ -211,38 +247,167 @@ export default function AdminProducts() {
     });
   };
 
-  const updateColorImage = (colorIndex, imgIndex, value) => {
+  const handleUploadThumbnail = async (colorIdx, file) => {
+    if (!file) return;
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setMessage('');
     setForm((f) => {
       const colors = f.colors.map((c, i) => {
-        if (i !== colorIndex) return c;
-        const images = [...(c.images || [c.image || ''])];
-        images[imgIndex] = value;
-        return { ...c, image: images[0] || '', images };
+        if (i !== colorIdx) return c;
+        return { ...c, thumbnail: url };
+      });
+      const mainImage = f.mainImage || url;
+      return { ...f, colors, mainImage };
+    });
+  };
+
+  const handleReplaceThumbnail = async (colorIdx, file) => {
+    if (!file) return;
+    const oldThumb = form.colors[colorIdx]?.thumbnail;
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setMessage('');
+    setForm((f) => {
+      const colors = f.colors.map((c, i) => {
+        if (i !== colorIdx) return c;
+        return { ...c, thumbnail: url };
+      });
+      let mainImage = f.mainImage;
+      if (mainImage === oldThumb || !mainImage) {
+        mainImage = url;
+      }
+      let collectionImage = f.collectionImage;
+      if (collectionImage === oldThumb) {
+        collectionImage = url;
+      }
+      return { ...f, colors, mainImage, collectionImage };
+    });
+  };
+
+  const handleAddGalleryImage = async (colorIdx, file) => {
+    if (!file) return;
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setMessage('');
+    setForm((f) => {
+      const colors = f.colors.map((c, i) => {
+        if (i !== colorIdx) return c;
+        const gallery = [...(c.gallery || []), url];
+        return { ...c, gallery };
       });
       return { ...f, colors };
     });
   };
 
-  const addColorImage = (colorIndex, value = '') => {
+  const handleReplaceGalleryImage = async (colorIdx, galleryIdx, file) => {
+    if (!file) return;
+    const oldUrl = form.colors[colorIdx]?.gallery?.[galleryIdx];
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setMessage('');
     setForm((f) => {
       const colors = f.colors.map((c, i) => {
-        if (i !== colorIndex) return c;
-        const images = [...(c.images || (c.image ? [c.image] : [''])), value];
-        return { ...c, image: images[0] || '', images };
+        if (i !== colorIdx) return c;
+        const gallery = [...(c.gallery || [])];
+        gallery[galleryIdx] = url;
+        return { ...c, gallery };
       });
-      return { ...f, colors };
+      let mainImage = f.mainImage;
+      if (mainImage === oldUrl) {
+        mainImage = url;
+      }
+      let collectionImage = f.collectionImage;
+      if (collectionImage === oldUrl) {
+        collectionImage = url;
+      }
+      return { ...f, colors, mainImage, collectionImage };
     });
   };
 
-  const removeColorImage = (colorIndex, imgIndex) => {
+  const handleRemoveGalleryImage = (colorIdx, galleryIdx) => {
+    const oldUrl = form.colors[colorIdx]?.gallery?.[galleryIdx];
     setForm((f) => {
       const colors = f.colors.map((c, i) => {
-        if (i !== colorIndex) return c;
-        const images = (c.images || [c.image || '']).filter((_, idx) => idx !== imgIndex);
-        return { ...c, image: images[0] || '', images: images.length ? images : [''] };
+        if (i !== colorIdx) return c;
+        const gallery = (c.gallery || []).filter((_, idx) => idx !== galleryIdx);
+        return { ...c, gallery };
       });
-      return { ...f, colors };
+
+      let mainImage = f.mainImage;
+      if (mainImage === oldUrl) {
+        const remainingImages = colors.flatMap((c) => [c.thumbnail, ...(c.gallery || [])]).filter(Boolean);
+        mainImage = remainingImages[0] || f.collectionImage || '';
+      }
+      return { ...f, colors, mainImage };
     });
+  };
+
+  const handleRemoveColor = (colorIdx) => {
+    const removedColor = form.colors[colorIdx];
+    const removedImages = [removedColor?.thumbnail, ...(removedColor?.gallery || [])].filter(Boolean);
+
+    setForm((f) => {
+      const colors = f.colors.filter((_, i) => i !== colorIdx);
+      let mainImage = f.mainImage;
+      if (removedImages.includes(mainImage)) {
+        const remainingImages = colors.flatMap((c) => [c.thumbnail, ...(c.gallery || [])]).filter(Boolean);
+        mainImage = remainingImages[0] || f.collectionImage || '';
+      }
+      return { ...f, colors, mainImage };
+    });
+  };
+
+  const handleUploadCollectionImage = async (file) => {
+    if (!file) return;
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setMessage('');
+    updateField('collectionImage', url);
+  };
+
+  const handleUploadVideo = async (file) => {
+    if (!file) return;
+    if (isNew || !selectedId) {
+      setMessage('Veuillez d\'abord enregistrer le produit avant d\'ajouter des vidéos.');
+      return;
+    }
+    setVideoUploading(true);
+    setMessage('');
+    try {
+      const formData = new FormData();
+      formData.append('video', file);
+      const res = await uploadProductVideo(selectedId, formData);
+      if (res?.product?.videos) {
+        setForm((prev) => (prev ? { ...prev, videos: res.product.videos } : prev));
+      }
+      setMessage('Vidéo ajoutée avec succès.');
+    } catch (err) {
+      setMessage(err.message || 'Erreur lors du téléversement de la vidéo.');
+    } finally {
+      setVideoUploading(false);
+    }
+  };
+
+  const handleConfirmDeleteVideo = async () => {
+    if (!videoToDelete || !selectedId) return;
+    try {
+      await deleteProductVideo(selectedId, videoToDelete.id);
+      setForm((prev) =>
+        prev
+          ? { ...prev, videos: (prev.videos || []).filter((v) => v.id !== videoToDelete.id) }
+          : prev,
+      );
+      setVideoToDelete(null);
+      setMessage('Vidéo supprimée.');
+    } catch (err) {
+      setMessage(err.message || 'Erreur lors de la suppression de la vidéo.');
+    }
   };
 
   const updateStock = (key, value) => {
@@ -250,9 +415,53 @@ export default function AdminProducts() {
   };
 
   const handleSave = async () => {
-    if (!form?.name.trim()) {
+    if (!form?.name?.trim()) {
       setMessage('Le nom du produit est requis.');
       return;
+    }
+    if (!form?.category?.trim()) {
+      setMessage('Veuillez sélectionner une catégorie.');
+      return;
+    }
+    if (!form?.description?.trim()) {
+      setMessage('La description est requise.');
+      return;
+    }
+    const priceNum = Number(form?.price);
+    if (form?.price === '' || form?.price === null || form?.price === undefined || isNaN(priceNum) || priceNum <= 0) {
+      setMessage('Le prix est requis et doit être supérieur à 0.');
+      return;
+    }
+    const discountNum = Number(form?.discount ?? 0);
+    if (isNaN(discountNum) || discountNum < 0) {
+      setMessage('La remise doit être positive.');
+      return;
+    }
+    if (discountNum > priceNum) {
+      setMessage('La remise ne peut pas être supérieure au prix.');
+      return;
+    }
+    if (!form?.collectionImage?.trim()) {
+      setMessage('Veuillez ajouter une image de collection.');
+      return;
+    }
+    const validSizes = (form?.sizes || []).map((s) => s.trim()).filter(Boolean);
+    if (validSizes.length === 0) {
+      setMessage('Veuillez ajouter au moins une taille.');
+      return;
+    }
+    const rawColors = form?.colors || [];
+    for (let i = 0; i < rawColors.length; i++) {
+      const c = rawColors[i];
+      if (!c.name?.trim()) {
+        setMessage(`Le nom de la couleur ${i + 1} est requis.`);
+        return;
+      }
+      const thumb = (c.thumbnail || c.images?.[0] || c.image || '').trim();
+      if (!thumb) {
+        setMessage(`Veuillez ajouter une miniature pour la couleur "${c.name.trim()}".`);
+        return;
+      }
     }
 
     setSaving(true);
@@ -269,10 +478,7 @@ export default function AdminProducts() {
         setIsNew(false);
         setForm({
           ...finalObj,
-          colors: (finalObj.colors || []).map((c) => ({
-            ...c,
-            images: c.images?.length ? [...c.images] : [c.image || ''],
-          })),
+          colors: mapProductColorsToForm(finalObj.colors),
         });
         setMessage('Produit ajouté avec succès.');
       } else {
@@ -281,10 +487,7 @@ export default function AdminProducts() {
         setForm({
           ...form,
           ...finalObj,
-          colors: (finalObj.colors || []).map((c) => ({
-            ...c,
-            images: c.images?.length ? [...c.images] : [c.image || ''],
-          })),
+          colors: mapProductColorsToForm(finalObj.colors),
         });
         setMessage('Produit mis à jour avec succès.');
       }
@@ -297,7 +500,6 @@ export default function AdminProducts() {
 
   const handleDelete = async () => {
     if (!selectedId || isNew) return;
-    if (!window.confirm('Supprimer ce produit ?')) return;
 
     setSaving(true);
     try {
@@ -308,10 +510,7 @@ export default function AdminProducts() {
         next
           ? {
               ...next,
-              colors: next.colors.map((c) => ({
-                ...c,
-                images: c.images?.length ? [...c.images] : [c.image || ''],
-              })),
+              colors: mapProductColorsToForm(next.colors),
               sizes: [...next.sizes],
               stock: { ...next.stock },
               isHidden: Boolean(next.isHidden),
@@ -319,6 +518,7 @@ export default function AdminProducts() {
           : null,
       );
       setIsNew(false);
+      setShowDeleteConfirm(false);
       setMessage('Produit supprimé.');
     } catch (err) {
       setMessage(err.message || 'Erreur lors de la suppression.');
@@ -328,6 +528,17 @@ export default function AdminProducts() {
   };
 
   const stockMatrix = form ? buildStockMatrix(form) : [];
+
+  const trimmed = searchQuery.trim().toLowerCase();
+  const filteredProducts = trimmed
+    ? products.filter(
+        (p) =>
+          p.name?.toLowerCase().includes(trimmed) ||
+          p.category?.toLowerCase().includes(trimmed) ||
+          p.description?.toLowerCase().includes(trimmed) ||
+          p.colors?.some((c) => c.name?.toLowerCase().includes(trimmed)),
+      )
+    : products;
 
   return (
     <section className="admin-products-section">
@@ -345,29 +556,61 @@ export default function AdminProducts() {
 
       <div className={`admin-grid admin-grid--mobile-${mobileView}`}>
         <aside className="admin-products-panel">
-          <h3>Catalogue ({products.length})</h3>
-          <div className="product-list">
-            {products.map((product) => (
+          <h3>
+            Catalogue ({filteredProducts.length}
+            {trimmed && products.length !== filteredProducts.length ? ` / ${products.length}` : ''})
+          </h3>
+
+          <div className="admin-products-search-wrap">
+            <input
+              type="text"
+              className="admin-products-search-input"
+              placeholder="Rechercher par nom, couleur, catégorie…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoComplete="off"
+              aria-label="Rechercher dans le catalogue"
+            />
+            {searchQuery && (
               <button
-                key={product.id}
                 type="button"
-                className={`product-list-item${selectedId === product.id && !isNew ? ' active' : ''}${
-                  product.isHidden ? ' product-hidden' : ''
-                }`}
-                onClick={() => selectProduct(product)}
+                className="admin-products-search-clear"
+                onClick={() => setSearchQuery('')}
+                aria-label="Effacer la recherche"
               >
-                <img src={product.collectionImage || product.mainImage} alt="" />
-                <div className="product-list-item-info">
-                  <strong>
-                    {product.name}
-                    {product.isHidden && <span className="admin-badge-tag hidden">Masqué</span>}
-                  </strong>
-                  <span>
-                    {formatPrice(product.price)} · {product.category}
-                  </span>
-                </div>
+                ✕
               </button>
-            ))}
+            )}
+          </div>
+
+          <div className="product-list">
+            {filteredProducts.length === 0 ? (
+              <p className="admin-empty" style={{ padding: '24px 12px', textAlign: 'center', fontSize: '0.85rem', color: '#888' }}>
+                Aucun produit trouvé {searchQuery ? `pour « ${searchQuery} »` : ''}.
+              </p>
+            ) : (
+              filteredProducts.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  className={`product-list-item${selectedId === product.id && !isNew ? ' active' : ''}${
+                    product.isHidden ? ' product-hidden' : ''
+                  }`}
+                  onClick={() => selectProduct(product)}
+                >
+                  <img src={product.collectionImage || product.mainImage} alt="" />
+                  <div className="product-list-item-info">
+                    <strong>
+                      {product.name}
+                      {product.isHidden && <span className="admin-badge-tag hidden">Masqué</span>}
+                    </strong>
+                    <span>
+                      {formatPrice(product.price)} · {product.category}
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
           </div>
         </aside>
 
@@ -391,9 +634,9 @@ export default function AdminProducts() {
                 <div className="admin-panel-title-with-badge">
                   <h3>{isNew ? 'Nouveau produit' : `Modifier : ${form.name}`}</h3>
                   {form.isHidden ? (
-                    <span className="admin-badge admin-badge--warning">Masqué du site</span>
+                    <span className="admin-badge admin-badge--warning">● Masqué du site</span>
                   ) : (
-                    <span className="admin-badge admin-badge--ok">Visible sur le site</span>
+                    <span className="admin-badge admin-badge--ok">● Visible sur le site</span>
                   )}
                 </div>
                 <button
@@ -401,7 +644,7 @@ export default function AdminProducts() {
                   className={`admin-btn ${form.isHidden ? 'secondary' : 'warning-btn'}`}
                   onClick={() => updateField('isHidden', !form.isHidden)}
                 >
-                  {form.isHidden ? '👁️ Afficher sur le site' : '🙈 Masquer du site'}
+                  {form.isHidden ? 'Afficher sur le site' : 'Masquer du site'}
                 </button>
               </div>
 
@@ -462,15 +705,15 @@ export default function AdminProducts() {
                       <img src={form.collectionImage} alt="Aperçu" className="admin-image-preview" />
                     )}
                     <label className="admin-upload-btn">
-                      📁 Téléverser
+                      + Ajouter image collection
                       <input
                         type="file"
                         accept="image/*"
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
-                          const url = await uploadFile(file);
-                          if (url) updateField('collectionImage', url);
+                          await handleUploadCollectionImage(file);
+                          e.target.value = '';
                         }}
                         hidden
                       />
@@ -480,146 +723,223 @@ export default function AdminProducts() {
 
                 <p className="form-section-title">Couleurs et leurs images (miniatures & angles)</p>
                 <div className="variant-list">
-                  {form.colors.map((color, colorIdx) => {
-                    const colorImages = color.images?.length ? color.images : [color.image || ''];
-                    return (
+                  {form.colors.map((color, colorIdx) => (
+                    <div
+                      key={colorIdx}
+                      className="admin-color-card"
+                      style={{
+                        background: '#fafafa',
+                        border: '1px solid #e0e0e0',
+                        padding: 16,
+                        borderRadius: 8,
+                        marginBottom: 16,
+                      }}
+                    >
                       <div
-                        key={colorIdx}
-                        className="admin-color-card"
                         style={{
-                          background: '#fafafa',
-                          border: '1px solid #e0e0e0',
-                          padding: 16,
-                          borderRadius: 8,
-                          marginBottom: 16,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: 12,
                         }}
                       >
-                        <div
-                          style={{
-                            display: 'flex',
-                            justify: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: 12,
-                          }}
+                        <strong style={{ fontSize: 14, color: '#333' }}>
+                          Couleur {colorIdx + 1} {color.name ? `: ${color.name}` : ''}
+                        </strong>
+                        <button
+                          type="button"
+                          className="admin-btn danger sm"
+                          onClick={() => handleRemoveColor(colorIdx)}
                         >
-                          <strong style={{ fontSize: 14, color: '#333' }}>
-                            Couleur {colorIdx + 1} {color.name ? `: ${color.name}` : ''}
-                          </strong>
-                          <button
-                            type="button"
-                            className="admin-btn danger sm"
-                            onClick={() => removeListItem('colors', colorIdx)}
-                          >
-                            Supprimer la couleur
-                          </button>
-                        </div>
+                          Supprimer la couleur
+                        </button>
+                      </div>
 
-                        <div className="form-field" style={{ marginBottom: 12 }}>
-                          <label style={{ fontSize: 12, fontWeight: 600 }}>Nom de la couleur (max 20 car.)</label>
-                          <input
-                            value={color.name}
-                            placeholder="Ex: Noir, Rose, Blanc..."
-                            maxLength={20}
-                            onChange={(e) => updateColor(colorIdx, 'name', e.target.value)}
-                          />
-                        </div>
+                      <div className="form-field" style={{ marginBottom: 16 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600 }}>Nom de la couleur (max 20 car.)</label>
+                        <input
+                          value={color.name}
+                          placeholder="Ex: Noir, Rose, Blanc..."
+                          maxLength={20}
+                          onChange={(e) => updateColor(colorIdx, 'name', e.target.value)}
+                        />
+                      </div>
 
-                        <div style={{ marginTop: 8 }}>
-                          <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8 }}>
-                            Images de cette couleur
-                          </label>
-                          {colorImages.map((imgUrl, imgIdx) => {
-                            const isMain = form.mainImage
-                              ? form.mainImage === imgUrl
-                              : (colorIdx === 0 && imgIdx === 0 && Boolean(imgUrl));
-
-                            return (
-                              <div key={imgIdx} className="variant-row admin-image-row" style={{ marginBottom: 8, flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                                {imgUrl && <img src={imgUrl} alt="" className="admin-image-preview-sm" />}
-                                <label className="admin-upload-btn sm">
-                                  📁 Téléverser
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={async (e) => {
-                                      const file = e.target.files?.[0];
-                                      if (!file) return;
-                                      const url = await uploadFile(file);
-                                      if (url) {
-                                        updateColorImage(colorIdx, imgIdx, url);
-                                        if (isMain || !form.mainImage) updateField('mainImage', url);
-                                      }
-                                    }}
-                                    hidden
-                                  />
-                                </label>
-                                {imgUrl && (
-                                  <button
-                                    type="button"
-                                    className={`admin-btn sm ${isMain ? 'primary' : 'secondary'}`}
-                                    style={isMain ? { background: '#2e7d32', color: '#fff', borderColor: '#2e7d32' } : {}}
-                                    onClick={() => updateField('mainImage', imgUrl)}
-                                  >
-                                    {isMain ? '★ Image principale (défaut)' : '☆ Définir comme principale'}
-                                  </button>
-                                )}
-                                {colorImages.length > 1 && (
-                                  <button
-                                    type="button"
-                                    className="admin-btn danger sm"
-                                    onClick={() => removeColorImage(colorIdx, imgIdx)}
-                                  >
-                                    Suppr.
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-
-                          <div className="admin-btn-group" style={{ marginTop: 6 }}>
-                            <label className="admin-btn secondary inline-upload-btn sm">
-                              📁 + Ajouter image pour cette couleur
+                      {/* Dedicated Thumbnail Section */}
+                      <div className="admin-color-section admin-thumbnail-section" style={{ marginBottom: 16 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8 }}>
+                          Miniature (image représentative de la couleur)
+                        </label>
+                        {color.thumbnail ? (
+                          <div className="variant-row admin-image-row" style={{ marginBottom: 8, flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                            <img src={color.thumbnail} alt="" className="admin-image-preview-sm" />
+                            <label className="admin-btn sm secondary inline-upload-btn">
+                              Modifier
                               <input
                                 type="file"
                                 accept="image/*"
                                 onChange={async (e) => {
                                   const file = e.target.files?.[0];
                                   if (!file) return;
-                                  const url = await uploadFile(file);
-                                  if (url) addColorImage(colorIdx, url);
+                                  await handleReplaceThumbnail(colorIdx, file);
+                                  e.target.value = '';
+                                }}
+                                hidden
+                              />
+                            </label>
+                            {(() => {
+                              const isMain = form.mainImage === color.thumbnail;
+                              return (
+                                <button
+                                  type="button"
+                                  className={`admin-btn sm ${isMain ? 'primary' : 'secondary'}`}
+                                  style={isMain ? { background: '#2e7d32', color: '#fff', borderColor: '#2e7d32' } : {}}
+                                  onClick={() => updateField('mainImage', color.thumbnail)}
+                                >
+                                  {isMain ? 'Image principale (défaut)' : 'Définir comme principale'}
+                                </button>
+                              );
+                            })()}
+                          </div>
+                        ) : (
+                          <div className="variant-row admin-image-row" style={{ marginBottom: 8, flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                            <label className="admin-upload-btn sm">
+                              + Ajouter image miniature
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  await handleUploadThumbnail(colorIdx, file);
+                                  e.target.value = '';
                                 }}
                                 hidden
                               />
                             </label>
                           </div>
+                        )}
+                      </div>
+
+                      {/* Dedicated Gallery Section */}
+                      <div className="admin-color-section admin-gallery-section" style={{ marginTop: 8 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 8 }}>
+                          Galerie (angles / positions supplémentaires)
+                        </label>
+                        {(color.gallery || []).map((galleryImg, galleryIdx) => {
+                          const isMain = form.mainImage === galleryImg;
+                          return (
+                            <div key={galleryIdx} className="variant-row admin-image-row" style={{ marginBottom: 8, flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                              {galleryImg && <img src={galleryImg} alt="" className="admin-image-preview-sm" />}
+                              <label className="admin-btn sm secondary inline-upload-btn">
+                                Modifier
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    await handleReplaceGalleryImage(colorIdx, galleryIdx, file);
+                                    e.target.value = '';
+                                  }}
+                                  hidden
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className={`admin-btn sm ${isMain ? 'primary' : 'secondary'}`}
+                                style={isMain ? { background: '#2e7d32', color: '#fff', borderColor: '#2e7d32' } : {}}
+                                onClick={() => updateField('mainImage', galleryImg)}
+                              >
+                                {isMain ? 'Image principale (défaut)' : 'Définir comme principale'}
+                              </button>
+                              <button
+                                type="button"
+                                className="admin-btn danger sm"
+                                onClick={() => handleRemoveGalleryImage(colorIdx, galleryIdx)}
+                              >
+                                Suppr.
+                              </button>
+                            </div>
+                          );
+                        })}
+
+                        <div className="admin-btn-group" style={{ marginTop: 6 }}>
+                          <label className="admin-btn secondary inline-upload-btn sm">
+                            + Ajouter image galerie
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                await handleAddGalleryImage(colorIdx, file);
+                                e.target.value = '';
+                              }}
+                              hidden
+                            />
+                          </label>
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
 
                   <div className="admin-btn-group">
                     <button
                       type="button"
                       className="admin-btn secondary"
-                      onClick={() => addListItem('colors', { id: '', name: '', image: '', images: [''] })}
+                      onClick={() => addListItem('colors', { id: '', name: '', thumbnail: '', gallery: [] })}
                     >
-                      + Nouvelle couleur
+                      + Couleur
                     </button>
-                    <label className="admin-btn secondary inline-upload-btn">
-                      📁 + Ajouter couleur avec image
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          const url = await uploadFile(file);
-                          if (url) addListItem('colors', { id: '', name: '', image: url, images: [url] });
-                        }}
-                        hidden
-                      />
-                    </label>
                   </div>
+                </div>
+
+                <p className="form-section-title">Vidéos du produit ({form.videos?.length || 0})</p>
+                <div className="variant-list">
+                  {isNew ? (
+                    <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic', margin: '4px 0 12px 0' }}>
+                      Enregistrez le produit pour pouvoir téléverser des vidéos.
+                    </p>
+                  ) : (
+                    <>
+                      {(form.videos || []).map((vid, vidIdx) => (
+                        <div
+                          key={vid.id || vidIdx}
+                          className="variant-row admin-image-row"
+                          style={{ marginBottom: 8, flexWrap: 'wrap', gap: 12, alignItems: 'center' }}
+                        >
+                          <video src={vid.videoUrl} className="admin-image-preview-sm" muted preload="metadata" />
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#333' }}>
+                            Vidéo {vidIdx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            className="admin-btn danger sm"
+                            onClick={() => setVideoToDelete(vid)}
+                          >
+                            Supprimer
+                          </button>
+                        </div>
+                      ))}
+                      <div className="admin-btn-group" style={{ marginTop: 6, marginBottom: 12 }}>
+                        <label className="admin-btn secondary inline-upload-btn sm">
+                          {videoUploading ? 'Téléversement...' : '+ Ajouter une vidéo'}
+                          <input
+                            type="file"
+                            accept="video/mp4,video/webm,video/ogg,video/quicktime"
+                            disabled={videoUploading}
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) await handleUploadVideo(file);
+                              e.target.value = '';
+                            }}
+                            hidden
+                          />
+                        </label>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <p className="form-section-title">Tailles</p>
@@ -676,138 +996,106 @@ export default function AdminProducts() {
                     {saving ? 'Enregistrement...' : isNew ? 'Ajouter le produit' : 'Enregistrer les modifications'}
                   </button>
                   {!isNew && selectedId && (
-                    <button type="button" className="admin-btn danger" onClick={handleDelete} disabled={saving}>
+                    <button
+                      type="button"
+                      className="admin-btn danger"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      disabled={saving}
+                    >
                       Supprimer
                     </button>
                   )}
                 </div>
 
                 {!isNew && selectedId && (
-                  <AdminProductReviewsSection productId={selectedId} />
+                  <AdminProductReviewsSection productId={selectedId} highlightReviewId={highlightReviewId} />
                 )}
               </div>
             </>
           )}
         </div>
       </div>
+
+      {showDeleteConfirm && (
+        <div
+          className="admin-modal-overlay"
+          onClick={() => setShowDeleteConfirm(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-confirm-title"
+        >
+          <div
+            className="admin-modal"
+            style={{ maxWidth: '420px', padding: '24px', textAlign: 'center' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="delete-confirm-title" style={{ margin: '0 0 16px', fontSize: '1.2rem', color: '#111' }}>
+              Supprimer ce produit ?
+            </h3>
+            <p style={{ margin: '0 0 24px', color: '#666', fontSize: '0.9rem' }}>
+              Cette action est irréversible. Le produit &laquo; {form?.name} &raquo; sera définitivement supprimé.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="admin-btn secondary"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={saving}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="admin-btn danger"
+                onClick={handleDelete}
+                disabled={saving}
+              >
+                {saving ? 'Suppression...' : 'Confirmer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {videoToDelete && (
+        <div
+          className="admin-modal-overlay"
+          onClick={() => setVideoToDelete(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="admin-modal"
+            style={{ maxWidth: '400px', padding: '24px', textAlign: 'center' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', color: '#111' }}>
+              Supprimer cette vidéo ?
+            </h3>
+            <p style={{ margin: '0 0 20px', color: '#666', fontSize: '0.85rem' }}>
+              Cette action supprimera définitivement la vidéo du produit.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="admin-btn secondary"
+                onClick={() => setVideoToDelete(null)}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="admin-btn danger"
+                onClick={handleConfirmDeleteVideo}
+              >
+                Confirmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
-function AdminProductReviewsSection({ productId }) {
-  const [reviews, setReviews] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const loadReviews = async () => {
-    if (!productId) return;
-    setLoading(true);
-    setError('');
-    try {
-      const data = await api.getAdminProductReviews(productId);
-      setReviews(data || []);
-    } catch (err) {
-      setError(err.message || 'Impossible de charger les avis.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadReviews();
-  }, [productId]);
-
-  const handleUpdateStatus = async (reviewId, status) => {
-    try {
-      await api.updateAdminProductReview(reviewId, { status });
-      loadReviews();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleToggleGeneral = async (reviewId, currentVal) => {
-    try {
-      await api.updateAdminProductReview(reviewId, { showInGeneral: !currentVal });
-      loadReviews();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleDelete = async (reviewId) => {
-    if (!window.confirm('Supprimer cet avis produit ?')) return;
-    try {
-      await api.deleteAdminProductReview(reviewId);
-      loadReviews();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  if (loading) return <p className="admin-loading" style={{ marginTop: 20 }}>Chargement des avis du produit...</p>;
-
-  return (
-    <div className="admin-product-reviews-container" style={{ marginTop: 30, paddingTop: 20, borderTop: '1px solid #eee' }}>
-      <h4 style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 12 }}>Avis clients pour ce produit ({reviews.length})</h4>
-      {error && <p className="admin-message error" style={{ color: 'red' }}>{error}</p>}
-
-      {reviews.length === 0 ? (
-        <p className="admin-empty" style={{ fontSize: 13, color: '#666' }}>Aucun avis soumis pour ce produit.</p>
-      ) : (
-        <div className="admin-reviews-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {reviews.map((review) => (
-            <div
-              key={review.id}
-              className={`admin-review-card ${review.status}`}
-              style={{ padding: 14, border: '1px solid #e0e0e0', borderRadius: 8, background: '#fafafa' }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
-                <strong>{review.authorName} <span style={{ color: '#f5a623' }}>({review.rating}/5★)</span></strong>
-                <span
-                  style={{
-                    fontSize: 11,
-                    padding: '2px 8px',
-                    borderRadius: 4,
-                    fontWeight: 'bold',
-                    background: review.status === 'approved' ? '#e8f5e9' : review.status === 'rejected' ? '#ffebee' : '#fff3e0',
-                    color: review.status === 'approved' ? '#2e7d32' : review.status === 'rejected' ? '#c62828' : '#e65100',
-                  }}
-                >
-                  {review.status === 'approved' ? 'Approuvé' : review.status === 'rejected' ? 'Refusé' : 'En attente'}
-                </span>
-              </div>
-              <p style={{ fontSize: 13, color: '#333', marginBottom: 10, lineHeight: 1.4 }}>{review.comment || review.body}</p>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                {review.status !== 'approved' && (
-                  <button type="button" className="admin-btn sm" onClick={() => handleUpdateStatus(review.id, 'approved')}>
-                    Approuver
-                  </button>
-                )}
-                {review.status !== 'rejected' && (
-                  <button type="button" className="admin-btn secondary sm" onClick={() => handleUpdateStatus(review.id, 'rejected')}>
-                    Refuser
-                  </button>
-                )}
-                <button type="button" className="admin-btn danger sm" onClick={() => handleDelete(review.id)}>
-                  Supprimer
-                </button>
-
-                <button
-                  type="button"
-                  className={`admin-btn sm ${review.showInGeneral ? 'warning-btn' : 'secondary'}`}
-                  style={{ marginLeft: 'auto' }}
-                  onClick={() => handleToggleGeneral(review.id, review.showInGeneral)}
-                >
-                  {review.showInGeneral ? '★ Visible dans Avis Généraux (clic pour masquer)' : '+ Afficher dans Avis Généraux'}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 

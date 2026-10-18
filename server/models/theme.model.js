@@ -5,6 +5,7 @@ import {
   text,
   numeric,
   timestamp,
+  boolean,
   check,
 } from 'drizzle-orm/pg-core';
 
@@ -41,6 +42,10 @@ export const siteSettings = pgTable(
     })
       .default('8.000')
       .notNull(),
+
+    announcements: text('announcements'),
+    announcementsHidden: boolean('announcements_hidden').default(false).notNull(),
+    heroConfig: text('hero_config'),
 
     updatedAt: timestamp('updated_at', {
       withTimezone: true,

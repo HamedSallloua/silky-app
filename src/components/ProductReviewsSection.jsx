@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import AdminProductReviewsSection from './AdminProductReviewsSection';
 import '../styles/product-reviews.css';
 
 export default function ProductReviewsSection({ productId }) {
@@ -112,7 +113,7 @@ export default function ProductReviewsSection({ productId }) {
 
   return (
     <section className="product_reviews_section" aria-label="Avis produit">
-      <div className="product_reviews_container">
+      <div className="product_reviews_container" id="product_reviews_container">
         <h2 className="product_reviews_heading">AVIS SUR CE PRODUIT</h2>
 
         <div className="product_reviews_summary_header">
@@ -256,6 +257,13 @@ export default function ProductReviewsSection({ productId }) {
             )}
           </div>
         </div>
+
+        {isAdmin && (
+          <AdminProductReviewsSection
+            productId={productId}
+            onReviewUpdated={fetchReviews}
+          />
+        )}
       </div>
     </section>
   );

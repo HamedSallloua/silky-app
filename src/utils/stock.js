@@ -12,9 +12,10 @@ export function getAvailableStock(product, colorId, size) {
 }
 
 export function getStockStatus(stock) {
-  if (stock <= 0) return { text: 'Rupture de stock', inStock: false };
-  if (stock <= 3) return { text: `Plus que ${stock} en stock`, inStock: true };
-  return { text: 'En stock', inStock: true };
+  const qty = Number(stock) || 0;
+  if (qty <= 0) return { text: 'Rupture de stock', inStock: false, status: 'out' };
+  if (qty <= 3) return { text: `Plus que ${qty} en stock`, inStock: true, status: 'low' };
+  return { text: 'En stock', inStock: true, status: 'available' };
 }
 
 export function isProductOutOfStock(product) {

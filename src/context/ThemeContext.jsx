@@ -1,11 +1,59 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { api } from '../api/client';
 
+export const DEFAULT_HERO_CONFIG = {
+  templateType: 'option1',
+  option1: {
+    mainText: 'Découvrez nos collections',
+    smallText: 'Vêtements de trés haute qualité, trendy & classic au meilleurs prix',
+    leftImage: '/pictures/femme_example.jpg',
+    rightImage: '/pictures/enfant_example.jpg',
+    leftButton: { text: 'Femme', destination: '/collection/femme', visible: true },
+    rightButton: { text: 'Enfant', destination: '/collection/enfant', visible: true },
+  },
+  option2: {
+    mainText: 'Découvrez nos collections',
+    smallText: 'Vêtements de trés haute qualité, trendy & classic au meilleurs prix',
+    image: '/pictures/femme_example.jpg',
+    textPosition: 'left',
+    button: { text: 'Découvrir', destination: '/collection/femme', visible: true },
+  },
+  option3: {
+    slides: [
+      {
+        id: 'slide-1',
+        mainText: 'Découvrez nos collections',
+        smallText: 'Vêtements de trés haute qualité, trendy & classic au meilleurs prix',
+        image: '/pictures/femme_example.jpg',
+        textPosition: 'left',
+        button: { text: 'Femme', destination: '/collection/femme', visible: true },
+      },
+      {
+        id: 'slide-2',
+        mainText: 'Nouvelle collection enfant',
+        smallText: 'Tendances & qualité au meilleur prix',
+        image: '/pictures/enfant_example.jpg',
+        textPosition: 'right',
+        button: { text: 'Enfant', destination: '/collection/enfant', visible: true },
+      },
+    ],
+  },
+};
+
 const DEFAULT_THEME = {
   primary: '#8D191C',
   secondary: '#F3EBEC',
   heroLeftImage: '/pictures/femme_example.jpg',
   heroRightImage: '/pictures/enfant_example.jpg',
+  announcements: [
+    { text: 'Livraison sur toute la Tunisie!', bold: false, italic: false, underline: false },
+    { text: 'Livraison rapide en 24/48 heures', bold: false, italic: false, underline: false },
+    { text: 'Qualité garantie', bold: false, italic: false, underline: false },
+    { text: 'Promotions speciales et Offres exclusives!', bold: false, italic: false, underline: false },
+    { text: 'Service client disponible 24/7', bold: false, italic: false, underline: false },
+  ],
+  announcementsHidden: false,
+  heroConfig: DEFAULT_HERO_CONFIG,
 };
 
 const ThemeContext = createContext(null);

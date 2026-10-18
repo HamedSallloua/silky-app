@@ -202,6 +202,39 @@ export const productImages = pgTable(
   ]
 );
 
+export const productVideos = pgTable(
+  'product_videos',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id, {
+        onDelete: 'cascade',
+      }),
+
+    videoUrl: text('video_url').notNull(),
+
+    sortOrder: smallint('sort_order')
+      .default(0)
+      .notNull(),
+
+    createdAt: timestamp('created_at', {
+      withTimezone: true,
+    }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_product_videos_product_id').on(
+      table.productId
+    ),
+    index('idx_product_videos_sort_order').on(
+      table.productId,
+      table.sortOrder,
+      table.createdAt
+    ),
+  ]
+);
+
 // -----------------------------------------------------------------------------
 // Relations
 // -----------------------------------------------------------------------------
@@ -224,6 +257,8 @@ export const productsRelations = relations(
     variants: many(productVariants),
 
     images: many(productImages),
+
+    videos: many(productVideos),
   })
 );
 
@@ -242,6 +277,16 @@ export const productImagesRelations = relations(
   ({ one }) => ({
     product: one(products, {
       fields: [productImages.productId],
+      references: [products.id],
+    }),
+  })
+);
+
+export const productVideosRelations = relations(
+  productVideos,
+  ({ one }) => ({
+    product: one(products, {
+      fields: [productVideos.productId],
       references: [products.id],
     }),
   })

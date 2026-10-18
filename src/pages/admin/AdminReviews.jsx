@@ -7,7 +7,7 @@ const STATUS_LABELS = {
   rejected: 'Refusé',
 };
 
-export default function AdminReviews() {
+export default function AdminReviews({ highlightReviewId = null }) {
   const [reviews, setReviews] = useState([]);
   const [gallery, setGallery] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15,9 +15,10 @@ export default function AdminReviews() {
   const [galleryAlt, setGalleryAlt] = useState('');
   const [galleryFile, setGalleryFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [activeHighlightId, setActiveHighlightId] = useState(null);
 
-  const loadAll = async () => {
-    setLoading(true);
+  const loadAll = async (isInitial = false) => {
+    if (isInitial) setLoading(true);
     setError('');
     try {
       const [reviewData, galleryData] = await Promise.all([api.getAllReviews(), api.getGallery()]);
@@ -26,13 +27,34 @@ export default function AdminReviews() {
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadAll();
+    loadAll(true);
   }, []);
+
+  useEffect(() => {
+    if (highlightReviewId && reviews.length > 0) {
+      setActiveHighlightId(highlightReviewId);
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`review-${highlightReviewId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+
+      const clearTimer = setTimeout(() => {
+        setActiveHighlightId(null);
+      }, 3500);
+
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(clearTimer);
+      };
+    }
+  }, [highlightReviewId, reviews]);
 
   const updateStatus = async (id, status) => {
     try {
@@ -94,10 +116,6 @@ export default function AdminReviews() {
               onChange={(e) => setGalleryFile(e.target.files?.[0] || null)}
             />
           </div>
-          <div className="form-group">
-            <label htmlFor="galleryAlt">Description</label>
-            <input id="galleryAlt" value={galleryAlt} onChange={(e) => setGalleryAlt(e.target.value)} />
-          </div>
           <button type="submit" className="admin-primary-btn" disabled={uploading}>
             {uploading ? 'Ajout...' : 'Ajouter à la galerie'}
           </button>
@@ -125,7 +143,11 @@ export default function AdminReviews() {
         ) : (
           <div className="admin-reviews-list">
             {pending.map((review) => (
-              <article key={review.id} className="admin-review-card">
+              <article
+                key={review.id}
+                id={`review-${review.id}`}
+                className={`admin-review-card ${activeHighlightId === review.id ? 'notification-highlight' : ''}`}
+              >
                 <div className="admin-review-meta">
                   <strong>{review.authorName}</strong>
                   <span>{review.rating}/5</span>
@@ -156,7 +178,11 @@ export default function AdminReviews() {
         ) : (
           <div className="admin-reviews-list">
             {approved.map((review) => (
-              <article key={review.id} className="admin-review-card approved">
+              <article
+                key={review.id}
+                id={`review-${review.id}`}
+                className={`admin-review-card approved ${activeHighlightId === review.id ? 'notification-highlight' : ''}`}
+              >
                 <div className="admin-review-meta">
                   <strong>{review.authorName}</strong>
                   <span>{review.rating}/5</span>

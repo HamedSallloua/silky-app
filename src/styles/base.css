@@ -5,6 +5,7 @@
   --color-primary-rgb: 141, 25, 28;
   --color-secondary: #F3EBEC;
   --color-secondary-muted: #F3EBEC;
+  --header-height: 125px;
 }
 
 /* --- Global Resets --- */
@@ -34,7 +35,6 @@ html {
   overflow: hidden;
   padding: 6px 0;
   font-size: 13px;
-  font-weight: bold;
 }
 
 .announcement_marquee {
@@ -78,7 +78,8 @@ html {
 
 .announcement_text {
   color: #ffffff;
-  text-decoration: underline;
+  text-decoration: none;
+  font-weight: normal;
   cursor: default;
 }
 
@@ -238,7 +239,8 @@ html {
   cursor: default;
 }
 
-.cart_dropdown_container:hover .cart_dropdown_box {
+.cart_dropdown_container:hover .cart_dropdown_box,
+.cart_dropdown_box.is_visible {
   display: block;
 }
 
@@ -854,6 +856,35 @@ html {
   }
 }
 
+/* ---------- VERY NARROW: max-width 360px ---------- */
+/* ROOT CAUSE FIX for .header-logout-btn disappearing between 301px–338px:
+   CSS flex items have min-width: auto by default, meaning they refuse to shrink
+   below their content's intrinsic minimum width. The .action_item span labels
+   ("Déconnexion" ≈60px, "Mon compte" ≈50px, etc.) set a ~257px floor on
+   .user_actions that cannot be overcome by gap reduction alone. Hiding the spans
+   collapses each item to its icon width (~16px), bringing .user_actions minimum
+   width to ~102px — well within any viewport ≥ 301px. */
+@media screen and (max-width: 360px) {
+  .contact_info {
+    display: none;
+  }
+
+  .contact_section {
+    gap: 0;
+  }
+
+  .user_actions {
+    gap: 4px;
+  }
+
+  /* Hiding text labels removes the intrinsic min-width floor on each flex item.
+     The logout button remains visible as the ⏻ icon (already rendered via ::before
+     at ≤774px) with its accessible title="Déconnexion" / aria-label intact. */
+  .action_item span {
+    display: none;
+  }
+}
+
 /* ---------- ULTRA-NARROW: max-width 300px ---------- */
 /* Fixes the top utility bar overflowing (Compte icon pushed off-screen) below ~270px */
 @media screen and (max-width: 300px) {
@@ -896,4 +927,30 @@ html {
   .action_item span {
     display: none;
   }
+}
+
+/* --- Global Secondary Button --- */
+.secondary-btn {
+  display: block;
+  text-align: center;
+  background-color: var(--color-secondary);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: none;
+  margin-top: 16px;
+  box-sizing: border-box;
+  transition: background-color 0.2s ease, opacity 0.2s ease, transform 0.1s ease;
+}
+
+.secondary-btn:hover {
+  background-color: color-mix(in srgb, var(--color-secondary) 80%, #ccc);
+  color: var(--color-primary);
+}
+
+.secondary-btn:active {
+  transform: scale(0.99);
 }

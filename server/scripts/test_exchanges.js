@@ -49,7 +49,8 @@ async function runTests() {
     phoneNumber: '12345678',
     orderSource: 'phone',
     customerEmail: 'jean.dupont@example.com',
-    shippingAddress: 'Tunis — Rue 123',
+    governorate: 'Tunis',
+    shippingAddress: 'Rue 123',
     items: [{ variantId: varA.id, quantity: 2 }],
   });
 
@@ -74,7 +75,7 @@ async function runTests() {
   const ex1 = await exchangeService.createExchange({
     orderId: initialOrder.id,
     customer: { customerName: 'Jean Dupont', phoneNumber: '12345678', shippingAddress: 'Tunis — Rue 123' },
-    items: [{ variantId: varB.id, quantity: 3 }],
+    items: [{ variantId: varB.id, action: 'add', quantity: 3 }],
   });
 
   const stockEx1A = await getStock(varA.id);
@@ -89,7 +90,7 @@ async function runTests() {
   const ex2 = await exchangeService.createExchange({
     orderId: initialOrder.id,
     customer: { customerName: 'Jean Dupont', phoneNumber: '12345678', shippingAddress: 'Tunis — Rue 123' },
-    items: [{ variantId: varC.id, quantity: 1 }],
+    items: [{ variantId: varC.id, action: 'add', quantity: 1 }],
   });
 
   const stockEx2A = await getStock(varA.id);
@@ -105,33 +106,33 @@ async function runTests() {
   await exchangeService.createExchange({
     orderId: initialOrder.id,
     customer: { customerName: 'Jean Dupont', phoneNumber: '12345678', shippingAddress: 'Tunis — Rue 123' },
-    items: [{ variantId: varC.id, quantity: 1 }],
+    items: [{ variantId: varC.id, action: 'replace', quantity: 1 }],
   });
   const stockEx3C = await getStock(varC.id);
   console.log(`Stock C: ${stockEx3C} (Expected: 9 - unchanged)`);
   if (stockEx3C !== 9) throw new Error('Test 3 failed!');
 
-  // Test 4: C x 1 -> C x 3 (Stock decreases by 2)
-  console.log('\n--- Test 4: C x 1 -> C x 3 ---');
+  // Test 4: C x 1 -> B x 3 (Stock B decreases from 10 to 7)
+  console.log('\n--- Test 4: C x 1 -> B x 3 ---');
   await exchangeService.createExchange({
     orderId: initialOrder.id,
     customer: { customerName: 'Jean Dupont', phoneNumber: '12345678', shippingAddress: 'Tunis — Rue 123' },
-    items: [{ variantId: varC.id, quantity: 3 }],
+    items: [{ variantId: varB.id, action: 'add', quantity: 3 }],
   });
-  const stockEx4C = await getStock(varC.id);
-  console.log(`Stock C: ${stockEx4C} (Expected: 7)`);
-  if (stockEx4C !== 7) throw new Error('Test 4 failed!');
+  const stockEx4B = await getStock(varB.id);
+  console.log(`Stock B: ${stockEx4B} (Expected: 7)`);
+  if (stockEx4B !== 7) throw new Error('Test 4 failed!');
 
-  // Test 5: C x 3 -> C x 1 (Stock increases by 2)
-  console.log('\n--- Test 5: C x 3 -> C x 1 ---');
+  // Test 5: B x 3 -> B x 1 via Return 2 (Stock B increases by 2: 7 -> 9)
+  console.log('\n--- Test 5: B x 3 -> B x 1 (Return 2) ---');
   await exchangeService.createExchange({
     orderId: initialOrder.id,
     customer: { customerName: 'Jean Dupont', phoneNumber: '12345678', shippingAddress: 'Tunis — Rue 123' },
-    items: [{ variantId: varC.id, quantity: 1 }],
+    items: [{ variantId: varB.id, action: 'return', quantity: 2 }],
   });
-  const stockEx5C = await getStock(varC.id);
-  console.log(`Stock C: ${stockEx5C} (Expected: 9)`);
-  if (stockEx5C !== 9) throw new Error('Test 5 failed!');
+  const stockEx5B = await getStock(varB.id);
+  console.log(`Stock B: ${stockEx5B} (Expected: 9)`);
+  if (stockEx5B !== 9) throw new Error('Test 5 failed!');
 
   // Test 7: Insufficient stock check
   console.log('\n--- Test 7: Insufficient Stock ---');
@@ -140,7 +141,7 @@ async function runTests() {
     await exchangeService.createExchange({
       orderId: initialOrder.id,
       customer: { customerName: 'Jean Dupont', phoneNumber: '12345678', shippingAddress: 'Tunis — Rue 123' },
-      items: [{ variantId: varA.id, quantity: 9999 }],
+      items: [{ variantId: varA.id, action: 'add', quantity: 9999 }],
     });
   } catch (err) {
     errorCaught = true;
@@ -169,8 +170,11 @@ async function runTests() {
     throw new Error('Order count changed unexpectedly!');
   }
   const latestExchange = fetchedOrder.exchanges[0];
-  const expectedPostRevenue = baselineAnalytics.kpi.totalRevenue + (latestExchange.total - initialOrder.total);
-  if (postAnalytics.kpi.totalRevenue !== expectedPostRevenue) {
+  const totalExchangeDeliveryFees = fetchedOrder.exchanges.reduce((sum, ex) => sum + Number(ex.deliveryFee || 0), 0);
+  const activeProductSubtotal = Number(latestExchange.subtotal || 0);
+  const expectedOrderRevenue = activeProductSubtotal + Number(initialOrder.deliveryFee || 0) + totalExchangeDeliveryFees;
+  const expectedPostRevenue = baselineAnalytics.kpi.totalRevenue + (expectedOrderRevenue - initialOrder.total);
+  if (Math.abs(postAnalytics.kpi.totalRevenue - expectedPostRevenue) > 0.01) {
     throw new Error(`Analytics revenue incorrect! Expected ${expectedPostRevenue}, got ${postAnalytics.kpi.totalRevenue}`);
   }
 
@@ -178,7 +182,17 @@ async function runTests() {
 
   console.log('\n✅ ALL VERIFICATION TESTS PASSED SUCCESSFULLY!');
 
-  // Cleanup test order
+  // Cleanup test order after background emails settle
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) AS pending FROM order_email_deliveries WHERE order_id = $1::uuid AND status = 'pending'`,
+      [initialOrder.id]
+    );
+    if (Number(rows[0]?.pending || 0) === 0) break;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
   await pool.query('DELETE FROM orders WHERE id = $1::text::uuid', [initialOrder.id]);
 }
 
@@ -190,4 +204,5 @@ runTests()
   .finally(() => {
     pool.end();
   });
+
 

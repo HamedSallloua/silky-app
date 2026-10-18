@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import ReviewsSection from '../components/ReviewsSection';
 import '../styles/reviews-page.css';
+import '../styles/home.css';
 
 export default function LeaveReview() {
   const { user, isAuthenticated, isAdmin } = useAuth();
@@ -96,19 +97,16 @@ export default function LeaveReview() {
   if (isAdmin) {
     return (
       <>
-        <main className="reviews-page">
-          <section className="reviews-page-section">
-            <div className="reviews-page-header">
-              <img src="/pictures/avis.png" alt="Avis clients Silky" className="reviews-page-logo" />
-              <h1>Donner votre avis</h1>
-              <p className="reviews-page-error" style={{ fontSize: 16, marginTop: 24 }}>
-                Les administrateurs ne peuvent pas soumettre d&apos;avis client.
-              </p>
-              <Link to="/admin" className="reviews-page-link" style={{ display: 'inline-block', marginTop: 20 }}>
-                Retour au panneau d&apos;administration
-              </Link>
-            </div>
-          </section>
+        <main className="collections_wrapper" style={{ minHeight: 400, paddingTop: 40 }}>
+          <h1 className="collection_title">Donner votre avis</h1>
+          <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+            <p style={{ fontSize: 16, color: '#b00020', marginBottom: 24 }}>
+              Les administrateurs ne peuvent pas soumettre d&apos;avis client.
+            </p>
+            <Link to="/admin" className="tout_button">
+              Retour au panneau d&apos;administration
+            </Link>
+          </div>
         </main>
         <ReviewsSection layout="leave-review" />
       </>

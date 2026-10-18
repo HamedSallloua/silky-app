@@ -1,5 +1,6 @@
 import { reviewRepository } from '../repositories/review.repository.js';
 import { productRepository } from '../repositories/product.repository.js';
+import * as notificationService from './notification.service.js';
 import { AppError } from '../utils/errors.js';
 
 export async function getPublishedStoreReviews() {
@@ -10,7 +11,7 @@ export async function getAllStoreReviews() {
   return reviewRepository.getAllStoreReviews();
 }
 
-export async function createStoreReview({ authorName, email, body, rating }) {
+export async function createStoreReview({ authorName, email, body, rating, userId = null, guestSessionId = null }) {
   if (!authorName?.trim() || !body?.trim()) {
     throw new AppError('Le nom et l\'avis sont requis', 400);
   }
@@ -24,7 +25,10 @@ export async function createStoreReview({ authorName, email, body, rating }) {
     email: email?.trim() || '',
     body: body.trim(),
     rating: ratingNum,
+    userId,
+    guestSessionId,
   });
+  await notificationService.createReviewNotification(review);
   return { message: 'Review submitted for approval', id: review.id };
 }
 
@@ -58,7 +62,7 @@ export async function getAllProductReviews(productId) {
   return reviewRepository.getAllProductReviews(productId);
 }
 
-export async function createProductReview({ productId, userId, authorName, rating, comment }) {
+export async function createProductReview({ productId, userId = null, guestSessionId = null, email = null, authorName, rating, comment }) {
   if (!comment?.trim()) {
     throw new AppError('Le commentaire est requis', 400);
   }
@@ -72,13 +76,18 @@ export async function createProductReview({ productId, userId, authorName, ratin
     throw new AppError('Product not found', 404);
   }
 
-  return reviewRepository.createProductReview({
+  const review = await reviewRepository.createProductReview({
     productId,
     userId,
+    guestSessionId,
+    email,
     authorName: authorName?.trim() || 'Client',
     rating: ratingNum,
     comment: comment.trim(),
   });
+
+  await notificationService.createProductReviewNotification(review, productId);
+  return review;
 }
 
 export async function updateProductReview(id, { status, showInGeneral }) {

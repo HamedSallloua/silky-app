@@ -21,7 +21,8 @@
   "db:check": "drizzle-kit check",
 
   "db:schema": "node server/db/apply-schema.js",
-  "db:seed": "node server/db/seed.js"
+  "db:seed": "node server/db/seed.js",
+  "test": "node server/scripts/verify-phase3.js"
 },
 
   "dependencies": {

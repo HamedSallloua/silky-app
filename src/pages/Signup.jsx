@@ -5,11 +5,16 @@ import '../styles/auth.css';
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { register } = useAuth();
+  const { isAuthenticated, register } = useAuth();
+
   const [form, setForm] = useState({ prenom: '', nom: '', identifier: '', password: '' });
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  if (isAuthenticated) {
+    return null;
+  }
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -65,6 +70,7 @@ export default function Signup() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isAuthenticated) return;
     setError('');
 
     const errors = validateForm();

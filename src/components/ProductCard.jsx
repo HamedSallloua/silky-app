@@ -3,8 +3,9 @@ import ProductPrice from './ProductPrice';
 import ProductBadges from './ProductBadges';
 
 export default function ProductCard({ name, product, image, linkTo = '/product/1' }) {
+  const isHidden = Boolean(product?.isHidden);
   return (
-    <div className="product_card">
+    <div className={`product_card${isHidden ? ' product_card--hidden' : ''}`}>
       <Link to={linkTo} className="product_card_link">
         <div className="product_image_container">
           <ProductBadges product={product} />

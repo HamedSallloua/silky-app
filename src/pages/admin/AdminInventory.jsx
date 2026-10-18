@@ -14,18 +14,20 @@ export default function AdminInventory({ refreshKey = 0 }) {
   const [message, setMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const loadInventory = useCallback(() => {
-    setLoading(true);
+  const loadInventory = useCallback((isInitial = false) => {
+    if (isInitial) setLoading(true);
     setError('');
     api
       .getAdminInventory()
       .then(setInventory)
       .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (isInitial) setLoading(false);
+      });
   }, []);
 
   useEffect(() => {
-    loadInventory();
+    loadInventory(!inventory.length);
   }, [loadInventory, refreshKey]);
 
   const handleEditChange = (variantId, value) => {
@@ -104,7 +106,6 @@ export default function AdminInventory({ refreshKey = 0 }) {
       {/* Live search bar */}
       <div className="admin-inventory-search-wrap">
         <div className="admin-inventory-search-inner">
-          <span className="admin-inventory-search-icon" aria-hidden="true">🔍</span>
           <input
             id="inventory-search"
             type="text"

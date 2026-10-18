@@ -2,13 +2,23 @@ import crypto from 'crypto';
 import { env } from '../config/env.js';
 
 const COOKIE_NAME = env.guestSessionCookieName;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUUID(id) {
+  return typeof id === 'string' && UUID_REGEX.test(id);
+}
 
 export function guestSessionMiddleware(req, res, next) {
-  let sessionId =
-    req.headers['x-guest-session-id'] ||
-    req.cookies?.[COOKIE_NAME];
+  const headerId = req.headers['x-guest-session-id'];
+  const cookieId = req.cookies?.[COOKIE_NAME];
 
-  if (!sessionId) {
+  let sessionId = null;
+
+  if (isValidUUID(headerId)) {
+    sessionId = headerId;
+  } else if (isValidUUID(cookieId)) {
+    sessionId = cookieId;
+  } else {
     sessionId = crypto.randomUUID();
   }
 

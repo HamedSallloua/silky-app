@@ -60,6 +60,7 @@ export function CartProvider({ children }) {
   const [itemCount, setItemCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [lastAddedAt, setLastAddedAt] = useState(null);
   const migratedRef = useRef(false);
 
   const setters = useMemo(
@@ -130,6 +131,7 @@ export function CartProvider({ children }) {
           quantity: Math.max(1, Number(item.quantity) || 1),
         });
         applyCartState(cart, setters);
+        setLastAddedAt((prev) => Math.max(Date.now(), (prev || 0) + 1));
         return cart;
       } catch (err) {
         setError(err.message || 'Impossible d\'ajouter au panier');
@@ -214,6 +216,7 @@ export function CartProvider({ children }) {
       itemCount,
       loading,
       error,
+      lastAddedAt,
       addItem,
       updateQuantity,
       removeItem,
@@ -228,6 +231,7 @@ export function CartProvider({ children }) {
       itemCount,
       loading,
       error,
+      lastAddedAt,
       addItem,
       updateQuantity,
       removeItem,

@@ -35,56 +35,68 @@ import Favorites from './pages/Favorites';
 import Account from './pages/Account';
 
 import CustomerRoute from './components/CustomerRoute';
-
+import GuestRoute from './components/GuestRoute';
 import PasswordReset from './pages/PasswordReset';
-
 import AdminLogin, { AdminRoute } from './pages/admin/AdminLogin';
-
 import AdminDashboard from './pages/admin/AdminDashboard';
 
-
-
 export default function App() {
-
   return (
-
     <Routes>
-
-      <Route element={<Layout />}>
-
+        <Route element={<Layout />}>
         <Route index element={<Home />} />
-
         <Route path="product/:id?" element={<Product />} />
-
         <Route path="collection/:category" element={<Collection />} />
-
         <Route path="search" element={<SearchResults />} />
-
         <Route path="cart" element={<Cart />} />
-
         <Route path="checkout" element={<Checkout />} />
-
         <Route path="order-confirmation" element={<OrderConfirmation />} />
-
         <Route path="leave-review" element={<LeaveReview />} />
-
         <Route path="about" element={<About />} />
-
         <Route path="contact" element={<Contact />} />
-
         <Route path="service-client" element={<CustomerService />} />
-
         <Route path="livraison-retours" element={<DeliveryReturns />} />
-
-        <Route path="login" element={<Login />} />
-
-        <Route path="signup" element={<Signup />} />
-
-        <Route path="password-reset" element={<PasswordReset />} />
-        <Route path="password-reset/:token" element={<PasswordReset />} />
-
+        <Route
+          path="login"
+          element={
+            <GuestRoute>
+              <Login />
+            </GuestRoute>
+          }
+        />
+        <Route
+          path="signup"
+          element={
+            <GuestRoute>
+              <Signup />
+            </GuestRoute>
+          }
+        />
+        <Route
+          path="register"
+          element={
+            <GuestRoute>
+              <Signup />
+            </GuestRoute>
+          }
+        />
+        <Route
+          path="password-reset"
+          element={
+            <GuestRoute>
+              <PasswordReset />
+            </GuestRoute>
+          }
+        />
+        <Route
+          path="password-reset/:token"
+          element={
+            <GuestRoute>
+              <PasswordReset />
+            </GuestRoute>
+          }
+        />
         <Route path="favorites" element={<Favorites />} />
-
         <Route
           path="account"
           element={
@@ -93,12 +105,16 @@ export default function App() {
             </CustomerRoute>
           }
         />
-
       </Route>
 
-
-
-      <Route path="admin/login" element={<AdminLogin />} />
+      <Route
+        path="admin/login"
+        element={
+          <GuestRoute>
+            <AdminLogin />
+          </GuestRoute>
+        }
+      />
 
       <Route
 
@@ -117,7 +133,5 @@ export default function App() {
       />
 
     </Routes>
-
   );
-
 }

@@ -4,33 +4,33 @@ import { generateExchangePdf } from '../../utils/orderPdf';
 import { formatPrice } from '../../utils/formatPrice';
 
 const TUNISIAN_GOVERNORATES = [
+  'Tunis',
+  'Sousse',
+  'Nabeul',
   'Ariana',
-  'Béja',
+  'Manouba',
+  'Monastir',
+  'Mahdia',
   'Ben Arous',
   'Bizerte',
-  'Gabès',
+  'Kairouan',
+  'Sfax',
+  'Zaghouan',
+  'Beja',
+  'Gabes',
   'Gafsa',
   'Jendouba',
-  'Kairouan',
   'Kasserine',
-  'Kébili',
+  'Kebili',
   'Kef',
-  'Mahdia',
-  'Manouba',
-  'Médenine',
-  'Monastir',
-  'Nabeul',
-  'Sfax',
+  'Medenine',
   'Sidi Bouzid',
   'Siliana',
-  'Sousse',
   'Tataouine',
   'Tozeur',
-  'Tunis',
-  'Zaghouan',
 ];
 
-const EMPTY_LINE = { variantId: '', quantity: 1 };
+const EMPTY_LINE = { variantId: '', quantity: 1, action: 'add', isExisting: false, currentQuantity: 0 };
 
 function parseGovAndAddress(fullAddressStr = '') {
   if (!fullAddressStr) return { governorate: '', streetAddress: '' };
@@ -176,7 +176,7 @@ function VariantSearchSelect({ inventory, value, onChange, required, index }) {
   );
 }
 
-export default function AdminExchangeModal({ open, order, onClose, onSuccess }) {
+export default function AdminExchangeModal({ open, order, paymentResponsibility = 'customer_paid', onClose, onSuccess }) {
   const [inventory, setInventory] = useState([]);
   const [loadingInventory, setLoadingInventory] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -189,9 +189,10 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
     customerEmail: '',
     governorate: '',
     shippingAddress: '',
-    deliveryFee: '',
     items: [{ ...EMPTY_LINE }],
   });
+
+  const isSilkyPaid = paymentResponsibility === 'silky_paid';
 
   useEffect(() => {
     if (!open || !order) return;
@@ -203,7 +204,7 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
     // Determine latest state (either latest exchange or original order)
     let latestState = order;
     if (order.exchanges && order.exchanges.length > 0) {
-      latestState = order.exchanges[order.exchanges.length - 1];
+      latestState = order.exchanges[0] || order.exchanges[order.exchanges.length - 1];
     }
 
     const custName =
@@ -212,17 +213,23 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
     const phone = latestState.customer?.phone || '';
     const email = latestState.customer?.email || '';
     const rawAddress = latestState.customer?.address || '';
-    const { governorate, streetAddress } = parseGovAndAddress(rawAddress);
-    const delFee =
-      latestState.deliveryFee !== undefined && latestState.deliveryFee !== null
-        ? String(latestState.deliveryFee)
-        : '';
+    const parsed = parseGovAndAddress(rawAddress);
+    const governorate = latestState.customer?.governorate || parsed.governorate;
+    const streetAddress = latestState.customer?.shippingAddress || latestState.customer?.streetAddress || parsed.streetAddress;
 
     const initialItems =
       Array.isArray(latestState.items) && latestState.items.length > 0
         ? latestState.items.map((it) => ({
             variantId: it.variantId || '',
+            productTitle: it.name || it.productTitle || '',
+            variantLabel: it.details || it.variantLabel || '',
+            colorName: it.colorName || '',
+            size: it.size || '',
+            image: it.image || it.imageUrl || null,
+            currentQuantity: Number(it.quantity) || 1,
+            action: 'keep',
             quantity: Number(it.quantity) || 1,
+            isExisting: true,
           }))
         : [{ ...EMPTY_LINE }];
 
@@ -232,7 +239,6 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
       customerEmail: email,
       governorate,
       shippingAddress: streetAddress,
-      deliveryFee: delFee,
       items: initialItems,
     });
 
@@ -242,7 +248,7 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
       .then(setInventory)
       .catch((err) => setError(err.message))
       .finally(() => setLoadingInventory(false));
-  }, [open, order]);
+  }, [open, order, isSilkyPaid]);
 
   if (!open || !order) return null;
 
@@ -250,8 +256,6 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
     let newValue = value;
     if (field === 'phoneNumber') {
       newValue = value.replace(/\D/g, '').slice(0, 8);
-    } else if (field === 'deliveryFee') {
-      newValue = value.replace(/\D/g, '').slice(0, 6);
     }
     setForm((prev) => ({ ...prev, [field]: newValue }));
     if (fieldErrors[field]) {
@@ -263,6 +267,24 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
     setForm((prev) => {
       const items = [...prev.items];
       items[index] = { ...items[index], [field]: value };
+      return { ...prev, items };
+    });
+    if (fieldErrors.items) {
+      setFieldErrors((prev) => ({ ...prev, items: '' }));
+    }
+  };
+
+  const updateItemAction = (index, action) => {
+    setForm((prev) => {
+      const items = [...prev.items];
+      const item = items[index];
+      items[index] = {
+        ...item,
+        action,
+        quantity: item.isExisting
+          ? (action === 'add' ? 1 : item.currentQuantity)
+          : (item.quantity || 1),
+      };
       return { ...prev, items };
     });
     if (fieldErrors.items) {
@@ -316,14 +338,57 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
       errors.shippingAddress = "L'adresse de livraison est obligatoire.";
     }
 
-    const trimmedFee = (form.deliveryFee || '').toString().trim();
-    if (trimmedFee && !/^\d{1,6}$/.test(trimmedFee)) {
-      errors.deliveryFee = 'Les frais de livraison doivent contenir uniquement des chiffres (max 6 chiffres).';
-    }
-
     const validItems = form.items.filter((line) => line.variantId);
     if (!validItems.length) {
       errors.items = 'Ajoutez au moins un article.';
+    } else {
+      const seenVariantIds = new Set();
+      let hasDuplicate = false;
+      for (const l of validItems) {
+        if (seenVariantIds.has(l.variantId)) {
+          hasDuplicate = true;
+          break;
+        }
+        seenVariantIds.add(l.variantId);
+      }
+
+      if (hasDuplicate) {
+        errors.items = 'Chaque variante ne peut apparaître qu\'une seule fois.';
+      } else {
+        // Check for keep-only unchanged
+        const isKeepOnlyUnchanged =
+          validItems.every(
+            (l) => l.isExisting && l.action === 'keep' && Number(l.quantity) === Number(l.currentQuantity)
+          ) &&
+          validItems.length === form.items.filter((l) => l.isExisting).length &&
+          !form.items.some((l) => !l.isExisting && l.variantId);
+
+        if (isKeepOnlyUnchanged) {
+          errors.items = 'Aucune modification détectée. Veuillez sélectionner une action (Échanger, Retourner) ou ajouter un article.';
+        }
+
+        // Check for zero resulting active items
+        let totalActive = 0;
+        for (const l of validItems) {
+          const q = Number(l.quantity) || 0;
+          const cur = Number(l.currentQuantity) || 0;
+          if (!l.isExisting) {
+            totalActive += q;
+          } else if (l.action === 'keep') {
+            totalActive += Math.min(q, cur);
+          } else if (l.action === 'replace') {
+            totalActive += cur;
+          } else if (l.action === 'return') {
+            totalActive += Math.max(0, cur - q);
+          } else if (l.action === 'add') {
+            totalActive += cur + q;
+          }
+        }
+
+        if (totalActive <= 0) {
+          errors.items = 'Un échange doit contenir au moins un article actif. Pour un retour complet, veuillez utiliser le Remboursement.';
+        }
+      }
     }
 
     return errors;
@@ -347,6 +412,7 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
       .filter((line) => line.variantId)
       .map((line) => ({
         variantId: line.variantId,
+        action: line.action || (line.isExisting ? 'keep' : 'add'),
         quantity: Math.max(1, parseInt(line.quantity, 10) || 1),
       }));
 
@@ -362,28 +428,29 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
     const payload = {
       customer: customerData,
       items,
+      paymentResponsibility: isSilkyPaid ? 'silky_paid' : 'customer_paid',
     };
 
-    if (form.deliveryFee !== '') payload.deliveryFee = Number(form.deliveryFee);
-
     try {
-      // 1. Get server preview & validate stock server-side
-      const previewData = await api.previewExchange(order.id, payload);
-
-      // 2. Generate and download PDF client-side
-      const pdfSuccess = generateExchangePdf(previewData);
-
-      // 3. Only after successful PDF generation/download, finalize exchange in DB
-      if (!pdfSuccess) {
-        throw new Error('Échec de la génération du PDF d\'échange.');
-      }
-
+      // 1. Explicit exchange creation/confirmation FIRST in DB
       const updatedOrder = await api.createExchange(order.id, payload);
 
       const latestExchange =
         updatedOrder.exchanges && updatedOrder.exchanges.length > 0
-          ? updatedOrder.exchanges[updatedOrder.exchanges.length - 1]
+          ? updatedOrder.exchanges[0]
           : null;
+
+      // 2. Generate and download PDF (side-effect free)
+      try {
+        if (latestExchange) {
+          generateExchangePdf({
+            ...latestExchange,
+            orderNumber: order.orderNumber,
+          });
+        }
+      } catch (pdfErr) {
+        console.error('PDF generation error:', pdfErr);
+      }
 
       const exchangeNum = latestExchange?.exchangeNumber || 'enregistré';
       const exchangeTotal = latestExchange ? formatPrice(latestExchange.total) : '';
@@ -411,7 +478,9 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
         aria-labelledby="exchange-order-title"
       >
         <div className="admin-modal-header">
-          <h2 id="exchange-order-title">Créer un Échange — {order.orderNumber}</h2>
+          <h2 id="exchange-order-title">
+            {isSilkyPaid ? 'Créer un Échange payé (Pris en charge par Silky)' : 'Créer un Échange'} — {order.orderNumber}
+          </h2>
           <button type="button" className="admin-modal-close" onClick={onClose} aria-label="Fermer">
             ×
           </button>
@@ -448,36 +517,18 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-field">
-              <label htmlFor="exch-customerEmail">Email (optionnel)</label>
-              <input
-                id="exch-customerEmail"
-                type="email"
-                value={form.customerEmail}
-                onChange={(e) => updateField('customerEmail', e.target.value)}
-                className={fieldErrors.customerEmail ? 'input-error' : ''}
-              />
-              {fieldErrors.customerEmail && (
-                <span className="field-error-msg">{fieldErrors.customerEmail}</span>
-              )}
-            </div>
-            <div className="form-field">
-              <label htmlFor="exch-deliveryFee">Frais de livraison (optionnel, TND)</label>
-              <input
-                id="exch-deliveryFee"
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                placeholder="Par défaut: frais du site"
-                value={form.deliveryFee}
-                onChange={(e) => updateField('deliveryFee', e.target.value)}
-                className={fieldErrors.deliveryFee ? 'input-error' : ''}
-              />
-              {fieldErrors.deliveryFee && (
-                <span className="field-error-msg">{fieldErrors.deliveryFee}</span>
-              )}
-            </div>
+          <div className="form-field">
+            <label htmlFor="exch-customerEmail">Email (optionnel)</label>
+            <input
+              id="exch-customerEmail"
+              type="email"
+              value={form.customerEmail}
+              onChange={(e) => updateField('customerEmail', e.target.value)}
+              className={fieldErrors.customerEmail ? 'input-error' : ''}
+            />
+            {fieldErrors.customerEmail && (
+              <span className="field-error-msg">{fieldErrors.customerEmail}</span>
+            )}
           </div>
 
           <div className="form-field">
@@ -517,34 +568,136 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
             <p className="admin-loading">Chargement des variantes...</p>
           ) : (
             <div className="admin-manual-order-lines">
-              {form.items.map((line, index) => (
-                <div key={index} className="admin-manual-order-line">
-                  <VariantSearchSelect
-                    inventory={inventory}
-                    value={line.variantId}
-                    onChange={(variantId) => updateItem(index, 'variantId', variantId)}
-                    required={index === 0}
-                    index={index}
-                  />
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={line.quantity}
-                    onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                    aria-label={`Quantité article ${index + 1}`}
-                  />
-                  {form.items.length > 1 && (
-                    <button
-                      type="button"
-                      className="admin-btn danger"
-                      onClick={() => removeLine(index)}
-                    >
-                      Retirer
-                    </button>
-                  )}
-                </div>
-              ))}
+              {form.items.map((line, index) => {
+                const invItem = inventory.find((it) => it.variantId === line.variantId);
+                const title = line.productTitle || invItem?.productTitle || 'Article';
+                const details = line.variantLabel || (invItem ? `${invItem.colorName} — Taille ${invItem.size}` : '');
+                const img = line.image || invItem?.colorImageUrl || null;
+
+                if (line.isExisting) {
+                  return (
+                    <div key={index} className="admin-exchange-line admin-exchange-line-existing">
+                      <div className="admin-exchange-item-meta">
+                        {img ? (
+                          <img src={img} alt="" className="admin-variant-thumb" />
+                        ) : (
+                          <div className="admin-variant-thumb-placeholder" />
+                        )}
+                        <div className="admin-exchange-item-text">
+                          <span className="admin-exchange-item-title">
+                            <strong>{title}</strong>
+                          </span>
+                          <span className="admin-exchange-item-sub">
+                            {details}
+                          </span>
+                        </div>
+                        <span className="admin-exchange-current-badge">
+                          Actuel : <strong>{line.currentQuantity}</strong>
+                        </span>
+                      </div>
+
+                      <div className="admin-exchange-controls">
+                        <select
+                          className="admin-exchange-action-select"
+                          value={line.action || 'keep'}
+                          onChange={(e) => updateItemAction(index, e.target.value)}
+                          aria-label={`Action article ${index + 1}`}
+                        >
+                          <option value="keep">Garder</option>
+                          <option value="replace">Échanger</option>
+                          <option value="return">Retourner</option>
+                          <option value="add">Ajouter</option>
+                        </select>
+
+                        <div className="admin-exchange-qty-box">
+                          <span className="admin-exchange-qty-label">
+                            {line.action === 'add' ? 'À ajouter :' : 'Qté :'}
+                          </span>
+                          {line.action === 'add' ? (
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={line.quantity}
+                              onChange={(e) => {
+                                const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                updateItem(index, 'quantity', val);
+                              }}
+                              aria-label={`Quantité à ajouter article ${index + 1}`}
+                            />
+                          ) : (
+                            <input
+                              type="number"
+                              min="1"
+                              max={line.currentQuantity}
+                              step="1"
+                              value={line.quantity}
+                              onChange={(e) => {
+                                const maxVal = line.currentQuantity || 1;
+                                const val = Math.min(maxVal, Math.max(1, parseInt(e.target.value, 10) || 1));
+                                updateItem(index, 'quantity', val);
+                              }}
+                              aria-label={`Quantité article ${index + 1}`}
+                            />
+                          )}
+                        </div>
+
+                        {form.items.length > 1 && (
+                          <button
+                            type="button"
+                            className="admin-btn danger"
+                            onClick={() => removeLine(index)}
+                            title="Retirer cet article"
+                          >
+                            Retirer
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={index} className="admin-exchange-line admin-exchange-line-new">
+                    <div className="admin-exchange-search-col">
+                      <VariantSearchSelect
+                        inventory={inventory}
+                        value={line.variantId}
+                        onChange={(variantId) => updateItem(index, 'variantId', variantId)}
+                        required
+                        index={index}
+                      />
+                    </div>
+
+                    <div className="admin-exchange-controls">
+                      <span className="admin-exchange-action-badge">Ajouter</span>
+                      <div className="admin-exchange-qty-box">
+                        <span className="admin-exchange-qty-label">Qté :</span>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={line.quantity}
+                          onChange={(e) => {
+                            const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                            updateItem(index, 'quantity', val);
+                          }}
+                          aria-label={`Quantité article ${index + 1}`}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        className="admin-btn danger"
+                        onClick={() => removeLine(index)}
+                      >
+                        Retirer
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
               {fieldErrors.items && (
                 <span className="field-error-msg" style={{ marginBottom: '8px' }}>
                   {fieldErrors.items}
@@ -564,7 +717,8 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
               Annuler
             </button>
             <button type="submit" className="admin-btn" disabled={submitting || loadingInventory}>
-              {submitting ? 'Traitement...' : 'Télécharger'}
+              <img src="/pictures/confirm.png" alt="" className="admin-btn-icon" style={{ filter: 'none' }} />
+              <span>{submitting ? 'Traitement...' : 'Confirmer'}</span>
             </button>
           </div>
         </form>
@@ -572,3 +726,4 @@ export default function AdminExchangeModal({ open, order, onClose, onSuccess }) 
     </div>
   );
 }
+

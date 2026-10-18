@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import ProductBadges from './ProductBadges';
 
 const SLIDE_COUNT = 5;
 const AUTO_DELAY = 4500;
-const CARD_WIDTH = 300;
-const CARD_HEIGHT = 450;
+const CARD_WIDTH = 450;
+const CARD_HEIGHT = 675;
 const TRANSITION = 'transform 0.65s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.65s cubic-bezier(0.4, 0, 0.2, 1), filter 0.65s cubic-bezier(0.4, 0, 0.2, 1)';
 
 function normalizeOffset(index, activeIndex, length) {
@@ -15,20 +16,63 @@ function normalizeOffset(index, activeIndex, length) {
   return offset;
 }
 
-function getSpacing(viewportWidth) {
-  return Math.max(130, Math.min(260, viewportWidth * 0.19));
+function getCardDimensions(viewportWidth) {
+  if (viewportWidth <= 480) {
+    const width = Math.max(230, Math.min(290, Math.round(viewportWidth * 0.70)));
+    return { width, height: Math.round(width * 1.5) };
+  }
+  if (viewportWidth <= 768) {
+    const width = Math.max(290, Math.min(360, Math.round(viewportWidth * 0.52)));
+    return { width, height: Math.round(width * 1.5) };
+  }
+  return { width: 450, height: 675 };
 }
 
-function getCardStyle(offset, spacing, dragPx = 0) {
+function getSpacing(viewportWidth) {
+  if (viewportWidth <= 480) {
+    return Math.max(90, Math.min(140, viewportWidth * 0.30));
+  }
+  if (viewportWidth <= 768) {
+    return Math.max(140, Math.min(220, viewportWidth * 0.28));
+  }
+  return Math.max(195, Math.min(390, viewportWidth * 0.285));
+}
+
+function getCardScale(offset) {
   const abs = Math.abs(offset);
-  const scale = abs === 0 ? 1 : abs === 1 ? 0.82 : 0.68;
+  return abs === 0 ? 1 : abs === 1 ? 0.82 : 0.68;
+}
+
+function getCardTranslateX(offset, spacing, cardWidth = 450) {
+  const sign = Math.sign(offset);
+  const abs = Math.abs(offset);
+  if (abs === 0) return 0;
+  if (abs === 1) return sign * spacing;
+
+  let dist = spacing;
+  for (let i = 2; i <= abs; i++) {
+    const scalePrev = getCardScale(i - 1);
+    const scaleCurr = getCardScale(i);
+    const scale0 = getCardScale(0);
+    const scale1 = getCardScale(1);
+    const gap = spacing - (cardWidth * (scale0 + scale1)) / 2;
+    dist += gap + (cardWidth * (scalePrev + scaleCurr)) / 2;
+  }
+  return sign * dist;
+}
+
+function getCardStyle(offset, spacing, cardDimensions, dragPx = 0) {
+  const abs = Math.abs(offset);
+  const scale = getCardScale(offset);
   const opacity = abs === 0 ? 1 : abs === 1 ? 0.82 : 0.58;
   const zIndex = abs === 0 ? 30 : 20 - abs;
-  const translateX = offset * spacing + dragPx;
+  const width = cardDimensions?.width || 450;
+  const height = cardDimensions?.height || 675;
+  const translateX = getCardTranslateX(offset, spacing, width) + dragPx;
 
   return {
-    width: CARD_WIDTH,
-    height: CARD_HEIGHT,
+    width,
+    height,
     transform: `translate(calc(-50% + ${translateX}px), -50%) scale(${scale})`,
     opacity,
     zIndex,
@@ -40,7 +84,12 @@ export default function ProductCarousel({ products }) {
   const visibleList = (products || []).filter((p) => !p.isHidden);
   const slides = visibleList.slice(0, SLIDE_COUNT);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [spacing, setSpacing] = useState(() => getSpacing(typeof window !== 'undefined' ? window.innerWidth : 1100));
+  const [cardDimensions, setCardDimensions] = useState(() =>
+    getCardDimensions(typeof window !== 'undefined' ? window.innerWidth : 1100),
+  );
+  const [spacing, setSpacing] = useState(() =>
+    getSpacing(typeof window !== 'undefined' ? window.innerWidth : 1100),
+  );
   const [dragPx, setDragPx] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -67,7 +116,11 @@ export default function ProductCarousel({ products }) {
     const el = containerRef.current;
     if (!el) return;
 
-    const update = () => setSpacing(getSpacing(el.clientWidth));
+    const update = () => {
+      const w = el.clientWidth;
+      setSpacing(getSpacing(w));
+      setCardDimensions(getCardDimensions(w));
+    };
     update();
 
     const ro = new ResizeObserver(update);
@@ -122,7 +175,7 @@ export default function ProductCarousel({ products }) {
       containerRef.current?.releasePointerCapture(e.pointerId);
       justDraggedRef.current = true;
 
-      const threshold = Math.max(40, spacing * 0.25);
+      const threshold = Math.max(35, spacing * 0.25);
       if (dx < -threshold) next();
       else if (dx > threshold) prev();
     }
@@ -204,13 +257,16 @@ export default function ProductCarousel({ products }) {
             return (
               <div
                 key={product.id}
-                className={`coverflow_card${isCenter ? ' coverflow_card_active' : ''}`}
+                className={`coverflow_card${isCenter ? ' coverflow_card_active' : ''}${
+                  product.isHidden ? ' coverflow_card--hidden' : ''
+                }`}
                 style={{
-                  ...getCardStyle(offset, spacing, dragPx),
+                  ...getCardStyle(offset, spacing, cardDimensions, dragPx),
                   transition: isDragging ? 'none' : TRANSITION,
                 }}
               >
                 <Link to={`/product/${product.id}`} className="coverflow_card_link" draggable={false}>
+                  <ProductBadges product={product} />
                   <img
                     src={product.collectionImage || product.mainImage}
                     alt={product.name}
@@ -228,10 +284,10 @@ export default function ProductCarousel({ products }) {
         </div>
 
         <button type="button" className="carousel_arrow carousel_arrow_left" onClick={() => handleArrowClick('prev')} aria-label="Précédent">
-          &#8249;
+          ❮
         </button>
         <button type="button" className="carousel_arrow carousel_arrow_right" onClick={() => handleArrowClick('next')} aria-label="Suivant">
-          &#8250;
+          ❯
         </button>
       </div>
     </section>

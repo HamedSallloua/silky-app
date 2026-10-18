@@ -6,11 +6,16 @@ import '../styles/auth.css';
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const { isAuthenticated, login } = useAuth();
+
   const [form, setForm] = useState({ identifier: '', password: '' });
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  if (isAuthenticated) {
+    return null;
+  }
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -46,6 +51,7 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isAuthenticated) return;
     setError('');
 
     const errors = validateForm();

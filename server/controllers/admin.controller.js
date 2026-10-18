@@ -23,9 +23,10 @@ export async function createManualOrder(req, res) {
   const {
     customerName,
     phoneNumber,
-    orderSource,
     items,
     customerEmail,
+    governorateId,
+    governorate,
     shippingAddress,
     deliveryFee,
   } = req.body;
@@ -34,9 +35,10 @@ export async function createManualOrder(req, res) {
     const order = await adminService.createManualOrder({
       customerName,
       phoneNumber,
-      orderSource,
       items,
       customerEmail,
+      governorateId,
+      governorate,
       shippingAddress,
       deliveryFee,
     });
@@ -47,7 +49,7 @@ export async function createManualOrder(req, res) {
 }
 
 export async function previewExchange(req, res) {
-  const { customer, items, deliveryFee } = req.body;
+  const { customer, items, deliveryFee, paymentResponsibility } = req.body;
   const orderId = req.params.id;
 
   try {
@@ -56,6 +58,7 @@ export async function previewExchange(req, res) {
       customer,
       items,
       deliveryFee,
+      paymentResponsibility,
     });
     res.json(preview);
   } catch (err) {
@@ -64,7 +67,7 @@ export async function previewExchange(req, res) {
 }
 
 export async function createExchange(req, res) {
-  const { customer, items, deliveryFee } = req.body;
+  const { customer, items, deliveryFee, paymentResponsibility } = req.body;
   const orderId = req.params.id;
 
   try {
@@ -73,6 +76,7 @@ export async function createExchange(req, res) {
       customer,
       items,
       deliveryFee,
+      paymentResponsibility,
     });
     res.status(201).json(updatedOrder);
   } catch (err) {
@@ -101,10 +105,10 @@ export async function updateInventory(req, res) {
 }
 
 export async function getAnalytics(req, res) {
-  const { granularity, limit } = req.query;
+  const { granularity, limit, piePeriod } = req.query;
 
   try {
-    const analytics = await analyticsService.getAnalytics({ granularity, limit });
+    const analytics = await analyticsService.getAnalytics({ granularity, limit, piePeriod });
     res.json(analytics);
   } catch (err) {
     sendError(res, err);

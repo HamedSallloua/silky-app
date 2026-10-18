@@ -2,36 +2,31 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client';
 import { formatPrice } from '../../utils/formatPrice';
 
-const ORDER_SOURCES = [
-  { value: 'social_media', label: 'Social media (Instagram, Facebook, TikTok, etc.)' },
-  { value: 'phone', label: 'Téléphone' },
-];
-
 const TUNISIAN_GOVERNORATES = [
+  'Tunis',
+  'Sousse',
+  'Nabeul',
   'Ariana',
-  'Béja',
+  'Manouba',
+  'Monastir',
+  'Mahdia',
   'Ben Arous',
   'Bizerte',
-  'Gabès',
+  'Kairouan',
+  'Sfax',
+  'Zaghouan',
+  'Beja',
+  'Gabes',
   'Gafsa',
   'Jendouba',
-  'Kairouan',
   'Kasserine',
-  'Kébili',
+  'Kebili',
   'Kef',
-  'Mahdia',
-  'Manouba',
-  'Médenine',
-  'Monastir',
-  'Nabeul',
-  'Sfax',
+  'Medenine',
   'Sidi Bouzid',
   'Siliana',
-  'Sousse',
   'Tataouine',
   'Tozeur',
-  'Tunis',
-  'Zaghouan',
 ];
 
 const EMPTY_LINE = { variantId: '', quantity: 1 };
@@ -181,7 +176,6 @@ export default function AdminManualOrderModal({ open, onClose, onSuccess }) {
     customerEmail: '',
     governorate: '',
     shippingAddress: '',
-    orderSource: 'social_media',
     deliveryFee: '',
     items: [{ ...EMPTY_LINE }],
   });
@@ -198,7 +192,6 @@ export default function AdminManualOrderModal({ open, onClose, onSuccess }) {
       customerEmail: '',
       governorate: '',
       shippingAddress: '',
-      orderSource: 'social_media',
       deliveryFee: '',
       items: [{ ...EMPTY_LINE }],
     });
@@ -317,13 +310,11 @@ export default function AdminManualOrderModal({ open, onClose, onSuccess }) {
         quantity: Math.max(1, parseInt(line.quantity, 10) || 1),
       }));
 
-    const fullShippingAddress = `${form.governorate} — ${form.shippingAddress.trim()}`;
-
     const payload = {
       customerName: form.customerName.trim(),
       phoneNumber: form.phoneNumber.trim(),
-      orderSource: form.orderSource,
-      shippingAddress: fullShippingAddress,
+      governorate: form.governorate,
+      shippingAddress: form.shippingAddress.trim(),
       items,
     };
 
@@ -391,34 +382,18 @@ export default function AdminManualOrderModal({ open, onClose, onSuccess }) {
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-field">
-              <label htmlFor="customerEmail">Email (optionnel)</label>
-              <input
-                id="customerEmail"
-                type="email"
-                value={form.customerEmail}
-                onChange={(e) => updateField('customerEmail', e.target.value)}
-                className={fieldErrors.customerEmail ? 'input-error' : ''}
-              />
-              {fieldErrors.customerEmail && (
-                <span className="field-error-msg">{fieldErrors.customerEmail}</span>
-              )}
-            </div>
-            <div className="form-field">
-              <label htmlFor="orderSource">Source *</label>
-              <select
-                id="orderSource"
-                value={form.orderSource}
-                onChange={(e) => updateField('orderSource', e.target.value)}
-              >
-                {ORDER_SOURCES.map((src) => (
-                  <option key={src.value} value={src.value}>
-                    {src.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="form-field">
+            <label htmlFor="customerEmail">Email (optionnel)</label>
+            <input
+              id="customerEmail"
+              type="email"
+              value={form.customerEmail}
+              onChange={(e) => updateField('customerEmail', e.target.value)}
+              className={fieldErrors.customerEmail ? 'input-error' : ''}
+            />
+            {fieldErrors.customerEmail && (
+              <span className="field-error-msg">{fieldErrors.customerEmail}</span>
+            )}
           </div>
 
           <div className="form-field">
@@ -449,23 +424,6 @@ export default function AdminManualOrderModal({ open, onClose, onSuccess }) {
             />
             {fieldErrors.shippingAddress && (
               <span className="field-error-msg">{fieldErrors.shippingAddress}</span>
-            )}
-          </div>
-
-          <div className="form-field">
-            <label htmlFor="deliveryFee">Frais de livraison (optionnel, TND)</label>
-            <input
-              id="deliveryFee"
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="Par défaut: frais du site"
-              value={form.deliveryFee}
-              onChange={(e) => updateField('deliveryFee', e.target.value)}
-              className={fieldErrors.deliveryFee ? 'input-error' : ''}
-            />
-            {fieldErrors.deliveryFee && (
-              <span className="field-error-msg">{fieldErrors.deliveryFee}</span>
             )}
           </div>
 

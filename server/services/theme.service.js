@@ -4,12 +4,15 @@ export async function getTheme() {
   return themeRepository.getSettings();
 }
 
-export async function updateTheme({ primary, secondary, heroLeftImage, heroRightImage }) {
+export async function updateTheme({ primary, secondary, heroLeftImage, heroRightImage, announcements, announcementsHidden, heroConfig }) {
   return themeRepository.updateSettings({
     primary,
     secondary,
     heroLeftImage,
     heroRightImage,
+    announcements,
+    announcementsHidden,
+    heroConfig,
   });
 }
 

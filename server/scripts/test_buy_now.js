@@ -288,7 +288,7 @@ async function runTests() {
           productId: product1.id,
           colorId: color1,
           size: size1,
-          quantity: 999999,
+          quantity: 25,
         },
       },
     });

@@ -18,5 +18,6 @@ async function mergeCarts(userId, guestSessionId, tx) {
 
   const userCart = await cartRepository.findOrCreateCart({ userId }, tx);
   await cartRepository.mergeGuestItemsIntoUserCart(guestCart.id, userCart.id, tx);
+  await cartRepository.deleteCart(guestCart.id, tx);
 }
 

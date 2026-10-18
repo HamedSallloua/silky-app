@@ -9,8 +9,31 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const onAuthExpired = () => setUser(null);
+    const onStorage = (e) => {
+      if (e.key === 'silky_auth_token' || e.key === 'silky_auth_user') {
+        setUser(getStoredUser());
+      }
+    };
+    const onPageShow = (e) => {
+      if (e.persisted) {
+        const stored = getStoredUser();
+        const token = getUserToken();
+        if (!stored && !token) {
+          setUser(null);
+        } else if (stored) {
+          setUser(stored);
+        }
+      }
+    };
+
     window.addEventListener('silky:auth-expired', onAuthExpired);
-    return () => window.removeEventListener('silky:auth-expired', onAuthExpired);
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      window.removeEventListener('silky:auth-expired', onAuthExpired);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('pageshow', onPageShow);
+    };
   }, []);
 
   useEffect(() => {

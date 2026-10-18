@@ -1,7 +1,7 @@
-import { Link } from 'react-router-dom';
 import CollectionSection from '../components/CollectionSection';
 import ProductCarousel from '../components/ProductCarousel';
 import ReviewsSection from '../components/ReviewsSection';
+import HeroRenderer from '../components/hero/HeroRenderer';
 import { useProducts } from '../context/ProductsContext';
 import { useTheme } from '../context/ThemeContext';
 import '../styles/home.css';
@@ -34,35 +34,9 @@ export default function Home() {
     getByCategory('enfant')[0]?.mainImage ||
     '/pictures/enfant_example.jpg';
 
-  const heroLeftImage = theme.heroLeftImage || '/pictures/femme_example.jpg';
-  const heroRightImage = theme.heroRightImage || '/pictures/enfant_example.jpg';
-
   return (
     <>
-      <main className="hero_container">
-        <div className="hero_text_overlay">
-          <h1>Découvrez nos collections</h1>
-          <p>Vêtements de trés haute qualité, trendy & classic au meilleurs prix</p>
-        </div>
-
-        <section
-          className="hero_box left"
-          style={{ backgroundImage: `url(${heroLeftImage})` }}
-        >
-          <Link to="/collection/femme" className="cta_button">
-            Femme
-          </Link>
-        </section>
-
-        <section
-          className="hero_box right"
-          style={{ backgroundImage: `url(${heroRightImage})` }}
-        >
-          <Link to="/collection/enfant" className="cta_button">
-            Enfant
-          </Link>
-        </section>
-      </main>
+      <HeroRenderer heroConfig={theme?.heroConfig} />
 
       {!loading && visibleProducts.length > 0 && <ProductCarousel products={visibleProducts} />}
 

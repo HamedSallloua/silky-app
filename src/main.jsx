@@ -14,15 +14,15 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <ThemeProvider>
-        <ProductsProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <ProductsProvider>
             <CartProvider>
               <FavoritesProvider>
                 <App />
               </FavoritesProvider>
             </CartProvider>
-          </AuthProvider>
-        </ProductsProvider>
+          </ProductsProvider>
+        </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>
   </StrictMode>,

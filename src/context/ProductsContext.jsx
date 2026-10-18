@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
+import { useAuth } from './AuthContext';
 
 const ProductsContext = createContext(null);
 
@@ -28,11 +29,15 @@ function normalizeProductState(p) {
     const rawImages = (c.images || (c.image ? [c.image] : []))
       .map((img) => (typeof img === 'string' ? img.trim() : ''))
       .filter(Boolean);
-    const mainImg = rawImages[0] || c.image || p.mainImage || '';
+    const thumbnail = c.thumbnail || rawImages[0] || c.image || p.mainImage || '';
+    const gallery = c.gallery || rawImages.slice(1);
+    const images = rawImages.length ? rawImages : thumbnail ? [thumbnail] : [];
     return {
       ...c,
-      image: mainImg,
-      images: rawImages.length ? rawImages : mainImg ? [mainImg] : [],
+      image: thumbnail,
+      thumbnail,
+      gallery,
+      images,
     };
   });
 
@@ -44,12 +49,14 @@ function normalizeProductState(p) {
     ...p,
     colors,
     thumbnails: allThumbnails.length ? allThumbnails : [p.mainImage].filter(Boolean),
+    videos: Array.isArray(p.videos) ? p.videos : [],
     isHidden: p.isHidden === true || p.is_active === false,
     is_active: !(p.isHidden === true || p.is_active === false),
   };
 }
 
 export function ProductsProvider({ children }) {
+  const { isAdmin } = useAuth();
   const [products, setProducts] = useState(() => {
     const stored = getStoredProducts();
     return stored ? stored.map(normalizeProductState) : [];
@@ -85,22 +92,18 @@ export function ProductsProvider({ children }) {
 
   const getByCategory = useCallback(
     (category, includeHidden = false) =>
-      products.filter((p) => p.category === category && (includeHidden || !p.isHidden)),
-    [products],
+      products.filter((p) => p.category === category && (isAdmin || includeHidden || !p.isHidden)),
+    [products, isAdmin],
   );
 
-  const visibleProducts = products.filter((p) => !p.isHidden);
+  const visibleProducts = useMemo(
+    () => (isAdmin ? products : products.filter((p) => !p.isHidden)),
+    [products, isAdmin],
+  );
 
   const addProduct = useCallback(async (product) => {
-    const isHiddenBool = product.isHidden === true || product.is_active === false;
-    let created = normalizeProductState({ ...product, isHidden: isHiddenBool });
-
-    try {
-      const saved = await api.createProduct(product);
-      if (saved) created = normalizeProductState(saved);
-    } catch (err) {
-      console.warn('Backend createProduct failed, saving locally:', err);
-    }
+    const saved = await api.createProduct(product);
+    const created = normalizeProductState(saved || product);
 
     setProducts((current) => {
       const next = [...current, created];
@@ -111,15 +114,8 @@ export function ProductsProvider({ children }) {
   }, []);
 
   const updateProduct = useCallback(async (id, updates) => {
-    const isHiddenBool = updates.isHidden === true || updates.is_active === false;
-    let savedProduct = normalizeProductState({ ...updates, isHidden: isHiddenBool });
-
-    try {
-      const saved = await api.updateProduct(id, updates);
-      if (saved) savedProduct = normalizeProductState(saved);
-    } catch (err) {
-      console.warn('Backend updateProduct failed, saving locally:', err);
-    }
+    const saved = await api.updateProduct(id, updates);
+    const savedProduct = normalizeProductState(saved || updates);
 
     setProducts((current) => {
       const next = current.map((p) => (p.id === id ? { ...p, ...savedProduct } : p));
@@ -130,17 +126,39 @@ export function ProductsProvider({ children }) {
   }, []);
 
   const deleteProduct = useCallback(async (id) => {
-    try {
-      await api.deleteProduct(id);
-    } catch (err) {
-      console.warn('Backend deleteProduct failed, deleting locally:', err);
-    }
+    await api.deleteProduct(id);
 
     setProducts((current) => {
       const next = current.filter((p) => p.id !== id);
       saveStoredProducts(next);
       return next;
     });
+  }, []);
+
+  const uploadProductVideo = useCallback(async (productId, formData) => {
+    const res = await api.uploadProductVideo(productId, formData);
+    if (res?.product) {
+      const updated = normalizeProductState(res.product);
+      setProducts((current) => {
+        const next = current.map((p) => (p.id === productId ? updated : p));
+        saveStoredProducts(next);
+        return next;
+      });
+    }
+    return res;
+  }, []);
+
+  const deleteProductVideo = useCallback(async (productId, videoId) => {
+    const res = await api.deleteProductVideo(productId, videoId);
+    if (res?.product) {
+      const updated = normalizeProductState(res.product);
+      setProducts((current) => {
+        const next = current.map((p) => (p.id === productId ? updated : p));
+        saveStoredProducts(next);
+        return next;
+      });
+    }
+    return res;
   }, []);
 
   return (
@@ -154,6 +172,8 @@ export function ProductsProvider({ children }) {
         addProduct,
         updateProduct,
         deleteProduct,
+        uploadProductVideo,
+        deleteProductVideo,
         refreshProducts,
       }}
     >

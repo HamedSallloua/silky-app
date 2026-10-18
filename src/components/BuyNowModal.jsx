@@ -2,35 +2,36 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useProducts } from '../context/ProductsContext';
-import { api } from '../api/client';
+import { api, generateIdempotencyKey } from '../api/client';
 import { formatPrice } from '../utils/formatPrice';
 import '../styles/buyNowModal.css';
 
+
 const TUNISIAN_GOVERNORATES = [
+  'Tunis',
+  'Sousse',
+  'Nabeul',
   'Ariana',
-  'Béja',
+  'Manouba',
+  'Monastir',
+  'Mahdia',
   'Ben Arous',
   'Bizerte',
-  'Gabès',
+  'Kairouan',
+  'Sfax',
+  'Zaghouan',
+  'Beja',
+  'Gabes',
   'Gafsa',
   'Jendouba',
-  'Kairouan',
   'Kasserine',
-  'Kébili',
+  'Kebili',
   'Kef',
-  'Mahdia',
-  'Manouba',
-  'Médenine',
-  'Monastir',
-  'Nabeul',
-  'Sfax',
+  'Medenine',
   'Sidi Bouzid',
   'Siliana',
-  'Sousse',
   'Tataouine',
   'Tozeur',
-  'Tunis',
-  'Zaghouan',
 ];
 
 const DEFAULT_DELIVERY_FEE = 8;
@@ -40,6 +41,7 @@ export default function BuyNowModal({ isOpen, onClose, buyNowItem }) {
   const { user, isAdmin } = useAuth();
   const { refreshProducts } = useProducts();
   const modalRef = useRef(null);
+  const idempotencyKeyRef = useRef(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -47,7 +49,6 @@ export default function BuyNowModal({ isOpen, onClose, buyNowItem }) {
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
-    email: '',
     phone: '',
     governorate: '',
     address: '',
@@ -102,6 +103,8 @@ export default function BuyNowModal({ isOpen, onClose, buyNowItem }) {
     const trimmedFirstName = (form.firstName || '').trim();
     if (!trimmedFirstName) {
       errors.firstName = 'Le prénom est obligatoire.';
+    } else if (!/^[a-zA-ZÀ-ÿ\s'-]+$/.test(trimmedFirstName)) {
+      errors.firstName = 'Le prénom doit contenir uniquement des lettres.';
     } else if (trimmedFirstName.length < 3) {
       errors.firstName = 'Le prénom doit contenir au moins 3 lettres.';
     } else if (trimmedFirstName.length > 35) {
@@ -111,15 +114,12 @@ export default function BuyNowModal({ isOpen, onClose, buyNowItem }) {
     const trimmedLastName = (form.lastName || '').trim();
     if (!trimmedLastName) {
       errors.lastName = 'Le nom est obligatoire.';
+    } else if (!/^[a-zA-ZÀ-ÿ\s'-]+$/.test(trimmedLastName)) {
+      errors.lastName = 'Le nom doit contenir uniquement des lettres.';
     } else if (trimmedLastName.length < 3) {
       errors.lastName = 'Le nom doit contenir au moins 3 lettres.';
     } else if (trimmedLastName.length > 35) {
       errors.lastName = 'Le nom ne doit pas dépasser 35 lettres.';
-    }
-
-    const trimmedEmail = (form.email || '').trim();
-    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      errors.email = 'Veuillez entrer une adresse e-mail valide.';
     }
 
     const trimmedPhone = (form.phone || '').trim();
@@ -158,34 +158,44 @@ export default function BuyNowModal({ isOpen, onClose, buyNowItem }) {
     setError('');
     setFieldErrors({});
 
-    const fullShippingAddress = `${form.governorate} — ${form.address.trim()}`;
+    // Ensure a stable idempotency key for this Buy Now attempt.
+    // Preserved across retries if network fails, reset on success.
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = generateIdempotencyKey();
+    }
+    const idempotencyKey = idempotencyKeyRef.current;
 
     try {
       const order = await api.checkout(
         {
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
-          email: form.email.trim() || null,
           phone: form.phone.trim(),
-          address: fullShippingAddress,
+          governorate: form.governorate,
+          address: form.address.trim(),
         },
         {
           productId: buyNowItem.productId,
           colorId: buyNowItem.colorId,
           size: buyNowItem.size,
           quantity: buyNowItem.quantity,
-        }
+        },
+        idempotencyKey
       );
 
+      // Reset idempotency key on success so future checkout gets a new key
+      idempotencyKeyRef.current = null;
       await refreshProducts();
       onClose();
       navigate('/order-confirmation', { state: { order } });
     } catch (err) {
+      // Keep idempotencyKeyRef.current so user retry reuses the same key
       setError(err.message || 'Impossible de finaliser la commande.');
     } finally {
       setSubmitting(false);
     }
   };
+
 
   const unitPrice = buyNowItem.price || 0;
   const quantity = buyNowItem.quantity || 1;
@@ -246,23 +256,6 @@ export default function BuyNowModal({ isOpen, onClose, buyNowItem }) {
                   <span className="field-error-msg">{fieldErrors.lastName}</span>
                 )}
               </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="buyNowEmail">
-                Adresse e-mail <span style={{ fontWeight: 400, opacity: 0.65, fontSize: '0.85em' }}>(facultatif)</span>
-              </label>
-              <input
-                type="email"
-                id="buyNowEmail"
-                name="email"
-                value={form.email}
-                onChange={handleChange}
-                className={fieldErrors.email ? 'input-error' : ''}
-              />
-              {fieldErrors.email && (
-                <span className="field-error-msg">{fieldErrors.email}</span>
-              )}
             </div>
 
             <div className="form-group">

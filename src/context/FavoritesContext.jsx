@@ -32,10 +32,19 @@ async function migrateLegacyFavorites(serverIds) {
 
 export function FavoritesProvider({ children }) {
   const { user, loading: authLoading } = useAuth();
+  const [items, setItems] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const migratedRef = useRef(false);
+
+  const applyFavoritesData = useCallback((result) => {
+    const favItems = result?.favourites || result?.items || [];
+    const pIds = result?.productIds || Array.from(new Set(favItems.map((f) => f.productId)));
+    setItems(favItems);
+    setFavoriteIds(pIds);
+    return favItems;
+  }, []);
 
   const refreshFavorites = useCallback(async () => {
     try {
@@ -45,21 +54,20 @@ export function FavoritesProvider({ children }) {
       if (!migratedRef.current) {
         migratedRef.current = true;
         const hadLegacy = Boolean(localStorage.getItem(LEGACY_STORAGE_KEY));
-        await migrateLegacyFavorites(result.productIds);
+        const currentPIds = result?.productIds || [];
+        await migrateLegacyFavorites(currentPIds);
         if (hadLegacy) {
           const refreshed = await api.getFavourites();
-          setFavoriteIds(refreshed.productIds);
-          return refreshed.productIds;
+          return applyFavoritesData(refreshed);
         }
       }
 
-      setFavoriteIds(result.productIds);
-      return result.productIds;
+      return applyFavoritesData(result);
     } catch (err) {
       setError(err.message || 'Impossible de charger les favoris');
       throw err;
     }
-  }, []);
+  }, [applyFavoritesData]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -88,12 +96,21 @@ export function FavoritesProvider({ children }) {
   }, [user?.id, authLoading, refreshFavorites]);
 
   const isFavorite = useCallback(
-    (productId) => favoriteIds.includes(productId),
-    [favoriteIds],
+    (productId, variantId = null) => {
+      if (!productId) return false;
+      if (variantId) {
+        return items.some(
+          (item) => item.productId === productId && item.variantId === variantId
+        );
+      }
+      // If variantId is not specified, check if any favorite exists for this product
+      return items.some((item) => item.productId === productId);
+    },
+    [items],
   );
 
   const toggleFavorite = useCallback(
-    async (productId) => {
+    async (payload) => {
       if (user?.role === 'admin') {
         const msg = 'Les administrateurs ne peuvent pas ajouter de produits aux favoris.';
         setError(msg);
@@ -101,27 +118,34 @@ export function FavoritesProvider({ children }) {
       }
       setError(null);
       try {
-        await api.toggleFavourite(productId);
-        const ids = await refreshFavorites();
-        return ids.includes(productId);
+        const body = typeof payload === 'string' ? { productId: payload } : payload;
+        const res = await api.toggleFavourite(body);
+        if (res?.favourites || res?.items) {
+          applyFavoritesData(res);
+          return res.isFavourite;
+        }
+        const updated = await refreshFavorites();
+        return updated;
       } catch (err) {
         setError(err.message || 'Impossible de mettre à jour les favoris');
         throw err;
       }
     },
-    [user?.role, refreshFavorites],
+    [user?.role, applyFavoritesData, refreshFavorites],
   );
 
   const removeFavorite = useCallback(
-    async (productId) => {
-      if (!favoriteIds.includes(productId)) return;
-      await toggleFavorite(productId);
+    async (payload) => {
+      const body = typeof payload === 'string' ? { productId: payload } : payload;
+      await toggleFavorite(body);
     },
-    [favoriteIds, toggleFavorite],
+    [toggleFavorite],
   );
 
   const value = useMemo(
     () => ({
+      items,
+      favorites: items,
       favoriteIds,
       loading,
       error,
@@ -130,7 +154,7 @@ export function FavoritesProvider({ children }) {
       removeFavorite,
       refreshFavorites,
     }),
-    [favoriteIds, loading, error, isFavorite, toggleFavorite, removeFavorite, refreshFavorites],
+    [items, favoriteIds, loading, error, isFavorite, toggleFavorite, removeFavorite, refreshFavorites],
   );
 
   return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>;

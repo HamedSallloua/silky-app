@@ -4,23 +4,287 @@ import ProductReviewsSection from '../components/ProductReviewsSection';
 import ProductPrice from '../components/ProductPrice';
 import ProductBadges from '../components/ProductBadges';
 import BuyNowModal from '../components/BuyNowModal';
+import ShareModal from '../components/ShareModal';
 import { useCart } from '../context/CartContext';
 import { useFavorites } from '../context/FavoritesContext';
 import { useProducts } from '../context/ProductsContext';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../api/client';
 import { getEffectivePrice } from '../utils/price';
-import { getAvailableStock, getStockStatus } from '../utils/stock';
+import { buildStockMatrix, getAvailableStock, getStockStatus } from '../utils/stock';
+import { formatPrice } from '../utils/formatPrice';
 import '../styles/product.css';
+import '../styles/product-admin.css';
+
+function slugify(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+function mapProductColorsToForm(rawColors = []) {
+  return rawColors.map((c, i) => {
+    const rawImages = (c.images || (c.image ? [c.image] : [])).filter(Boolean);
+    const thumbnail = (c.thumbnail || rawImages[0] || c.image || '').trim();
+    const gallery = (c.gallery || rawImages.slice(1))
+      .map((g) => (typeof g === 'string' ? g.trim() : ''))
+      .filter(Boolean);
+    return {
+      id: c.id || slugify(c.name) || `color-${i}`,
+      name: (c.name || '').trim(),
+      thumbnail,
+      gallery,
+    };
+  });
+}
+
+function normalizeProduct(form) {
+  const colors = form.colors
+    .filter((c) => c.name.trim())
+    .map((c, i) => {
+      const thumbnail = (c.thumbnail || '').trim();
+      const gallery = (c.gallery || []).map((g) => (typeof g === 'string' ? g.trim() : '')).filter(Boolean);
+      const images = [thumbnail, ...gallery].filter(Boolean);
+      return {
+        id: c.id || slugify(c.name) || `color-${i}`,
+        name: c.name.trim(),
+        image: thumbnail,
+        thumbnail,
+        gallery,
+        images,
+      };
+    });
+
+  const sizes = form.sizes.map((s) => s.trim()).filter(Boolean);
+
+  const stock = { ...form.stock };
+  buildStockMatrix({ colors, sizes }).forEach(({ key }) => {
+    if (stock[key] === undefined || stock[key] === '') stock[key] = 0;
+    stock[key] = Number(stock[key]) || 0;
+  });
+
+  const allThumbnails = colors.flatMap((c) => c.images).filter(Boolean);
+  const currentMain = (form.mainImage || '').trim();
+  const mainImage =
+    currentMain && allThumbnails.includes(currentMain)
+      ? currentMain
+      : allThumbnails[0] || '';
+
+  return {
+    name: form.name.trim(),
+    description: form.description.trim(),
+    price: Number(form.price) || 0,
+    discount: Number(form.discount) || 0,
+    category: form.category,
+    mainImage,
+    thumbnails: allThumbnails,
+    colors,
+    sizes,
+    stock,
+    collectionImage: (form.collectionImage || '').trim(),
+    isHidden: Boolean(form.isHidden),
+  };
+}
+
+async function uploadFile(file) {
+  if (!file) return null;
+  const formData = new FormData();
+  formData.append('image', file);
+
+  try {
+    const res = await api.uploadProductImage(formData);
+    if (res?.url) return res.url;
+  } catch (err) {
+    console.warn('API upload failed, falling back to data URL:', err);
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = (e) => reject(e);
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatVideoTime(seconds) {
+  if (!seconds || isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
+
+function ProductVideoPlayer({ videoUrl }) {
+  const videoRef = useRef(null);
+  const progressRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.currentTime = 0;
+    setCurrentTime(0);
+    video.muted = true;
+
+    const playPromise = video.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => setIsPlaying(true))
+        .catch(() => setIsPlaying(false));
+    }
+  }, [videoUrl]);
+
+  const togglePlayPause = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.paused) {
+      video.play().then(() => setIsPlaying(true)).catch(() => {});
+    } else {
+      video.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      setCurrentTime(videoRef.current.currentTime);
+      if (videoRef.current.duration && !duration) {
+        setDuration(videoRef.current.duration);
+      }
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration || 0);
+    }
+  };
+
+  const handleSeek = (e) => {
+    if (!progressRef.current || !videoRef.current || !duration) return;
+    const rect = progressRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+    const newTime = percentage * duration;
+    videoRef.current.currentTime = newTime;
+    setCurrentTime(newTime);
+  };
+
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div
+      className="product_video_main_container"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        autoPlay
+        loop
+        muted
+        playsInline
+        disablePictureInPicture
+        disableRemotePlayback
+        className="product_video_player"
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onClick={togglePlayPause}
+      />
+
+      {/* Center Play Overlay when paused */}
+      {!isPlaying && (
+        <button
+          type="button"
+          className="product_video_center_play"
+          onClick={togglePlayPause}
+          aria-label="Lire la vidéo"
+        >
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </button>
+      )}
+
+      {/* Sleek Custom Controls Bar (Play/Pause & Seekbar ONLY) */}
+      <div
+        className={`product_video_controls_overlay${
+          !isPlaying || isHovered ? ' visible' : ''
+        }`}
+      >
+        <button
+          type="button"
+          className="product_video_play_btn"
+          onClick={togglePlayPause}
+          aria-label={isPlaying ? 'Pause' : 'Lecture'}
+          title={isPlaying ? 'Pause' : 'Lecture'}
+        >
+          {isPlaying ? (
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          )}
+        </button>
+
+        <div
+          className="product_video_progress_container"
+          ref={progressRef}
+          onClick={handleSeek}
+          role="slider"
+          aria-label="Progression de lecture"
+          aria-valuemin="0"
+          aria-valuemax={duration || 100}
+          aria-valuenow={currentTime}
+        >
+          <div className="product_video_progress_track">
+            <div
+              className="product_video_progress_bar"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        </div>
+
+        <span className="product_video_time">
+          {formatVideoTime(currentTime)} / {formatVideoTime(duration)}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function Product() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getProduct, products, loading } = useProducts();
+  const {
+    getProduct,
+    products,
+    loading,
+    updateProduct,
+    deleteProduct,
+    uploadProductVideo,
+    deleteProductVideo,
+  } = useProducts();
   const { addItem } = useCart();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const { isAdmin } = useAuth();
 
   const product = getProduct(id);
 
+  // Customer view states
   const [quantity, setQuantity] = useState(1);
   const [selectedColor, setSelectedColor] = useState(null);
   const [selectedSize, setSelectedSize] = useState(null);
@@ -31,102 +295,689 @@ export default function Product() {
   const [isZoomed, setIsZoomed] = useState(false);
   const [buyNowModalOpen, setBuyNowModalOpen] = useState(false);
   const [buyNowItem, setBuyNowItem] = useState(null);
+  const [selectedVideoIdx, setSelectedVideoIdx] = useState(0);
+
+  // Admin edit states
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [adminMessage, setAdminMessage] = useState({ type: '', text: '' });
+  const [stockExpanded, setStockExpanded] = useState(false);
+  const [videoToDelete, setVideoToDelete] = useState(null);
+  const [videoUploading, setVideoUploading] = useState(false);
 
   const verticalTrackRef = useRef(null);
   const colorTrackRef = useRef(null);
+  const videoTrackRef = useRef(null);
 
+  // Active product source (draft when editing, loaded product otherwise)
+  const activeProduct = isEditing && draft ? draft : product;
+
+  // Flattened thumbnails for selection and arrow navigation
   const allThumbnails = useMemo(() => {
-    if (!product) return [];
+    if (!activeProduct) return [];
     const result = [];
-    if (product.colors?.length > 0) {
-      product.colors.forEach((color) => {
-        const colorImgs = color.images?.length
-          ? color.images.filter(Boolean)
-          : color.image
-          ? [color.image]
-          : [];
-        colorImgs.forEach((src, idx) => {
+    if (activeProduct.colors?.length > 0) {
+      activeProduct.colors.forEach((color, colorIdx) => {
+        const colorThumb = color.thumbnail || color.images?.[0] || color.image || '';
+        const gallery = color.gallery || (color.images?.length > 1 ? color.images.slice(1) : []);
+
+        if (colorThumb) {
           result.push({
-            src,
+            src: colorThumb,
             colorId: color.id,
             colorName: color.name,
-            isMain: idx === 0,
+            isThumbnail: true,
+            isGallery: false,
+            colorIdx,
             color,
           });
+        }
+
+        gallery.forEach((src, galleryIdx) => {
+          if (src) {
+            result.push({
+              src,
+              colorId: color.id,
+              colorName: color.name,
+              isThumbnail: false,
+              isGallery: true,
+              colorIdx,
+              galleryIdx,
+              color,
+            });
+          }
         });
       });
     }
     if (!result.length) {
-      const fallbackList = product.thumbnails?.length ? product.thumbnails : [product.mainImage];
+      const fallbackList = activeProduct.thumbnails?.length
+        ? activeProduct.thumbnails
+        : [activeProduct.mainImage];
       fallbackList.filter(Boolean).forEach((src) => {
-        result.push({ src, colorId: null, colorName: '', isMain: false, color: null });
+        result.push({
+          src,
+          colorId: null,
+          colorName: '',
+          isThumbnail: true,
+          isGallery: false,
+          colorIdx: 0,
+          color: null,
+        });
       });
     }
     return result;
-  }, [product]);
+  }, [activeProduct]);
 
   useEffect(() => {
     if (!product) return;
     const initialColor = product.colors?.[0] ?? null;
-    setSelectedColor(initialColor);
     setSelectedSize(product.sizes?.[0] ?? null);
-    // Use the admin-set product.mainImage as the initial display image.
-    // Fall back to the first colour's image if no standalone mainImage was set.
-    const initialMainImage = product.mainImage || initialColor?.images?.[0] || initialColor?.image || '';
+    const initialMainImage =
+      product.mainImage ||
+      initialColor?.thumbnail ||
+      initialColor?.images?.[0] ||
+      initialColor?.image ||
+      '';
     setMainImage(initialMainImage);
+
+    let matchingColor = initialColor;
+    if (initialMainImage && product.colors?.length > 0) {
+      const found = product.colors.find(
+        (c) =>
+          c.thumbnail === initialMainImage ||
+          c.image === initialMainImage ||
+          (c.images || []).includes(initialMainImage) ||
+          (c.gallery || []).includes(initialMainImage),
+      );
+      if (found) {
+        matchingColor = found;
+      }
+    }
+    setSelectedColor(matchingColor);
+    setSelectedVideoIdx(0);
     setQuantity(1);
     setCartMessage('');
   }, [product?.id]);
 
-  const scrollToColorThumbnail = (colorId) => {
-    if (!verticalTrackRef.current || !colorId) return;
-    const targetIdx = allThumbnails.findIndex((item) => item.colorId === colorId);
-    if (targetIdx !== -1) {
-      const track = verticalTrackRef.current;
-      const buttons = track.querySelectorAll('.thumb_box_vertical');
-      if (buttons[targetIdx]) {
-        buttons[targetIdx].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const scrollToThumbnail = (index) => {
+    if (!verticalTrackRef.current || typeof index !== 'number' || index < 0) return;
+    const track = verticalTrackRef.current;
+    const buttons = track.querySelectorAll('.thumb_box_vertical');
+    const targetBtn = buttons[index];
+    if (targetBtn) {
+      const trackRect = track.getBoundingClientRect();
+      const btnRect = targetBtn.getBoundingClientRect();
+      if (track.scrollWidth > track.clientWidth) {
+        const offset = btnRect.left - trackRect.left + track.scrollLeft - (track.clientWidth - btnRect.width) / 2;
+        track.scrollTo({ left: offset, behavior: 'smooth' });
+      }
+      if (track.scrollHeight > track.clientHeight) {
+        const offset = btnRect.top - trackRect.top + track.scrollTop - (track.clientHeight - btnRect.height) / 2;
+        track.scrollTo({ top: offset, behavior: 'smooth' });
       }
     }
   };
 
+  const scrollToColorSwatch = (colorId) => {
+    if (!colorTrackRef.current || !colorId || !activeProduct?.colors?.length) return;
+    const targetIdx = activeProduct.colors.findIndex((c) => c.id === colorId);
+    if (targetIdx !== -1) {
+      const track = colorTrackRef.current;
+      const buttons = track.querySelectorAll('.color_thumb_box');
+      const targetBtn = buttons[targetIdx];
+      if (targetBtn) {
+        const trackLeft = track.getBoundingClientRect().left;
+        const btnLeft = targetBtn.getBoundingClientRect().left;
+        const offset = btnLeft - trackLeft + track.scrollLeft - (track.clientWidth - targetBtn.clientWidth) / 2;
+        track.scrollTo({ left: offset, behavior: 'smooth' });
+      }
+    }
+  };
+
+  const scrollToSection = (targetId) => {
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    const header = document.querySelector('.header_wrapper');
+    const headerHeight = header ? header.getBoundingClientRect().height : 0;
+    const top = el.getBoundingClientRect().top + window.pageYOffset - headerHeight - 16;
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.scrollTo({
+      top: Math.max(0, top),
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    });
+  };
+
+  const scrollToColorThumbnail = (colorId) => {
+    if (!verticalTrackRef.current || !colorId || !allThumbnails.length) return;
+    const targetIdx = allThumbnails.findIndex((item) => item.colorId === colorId);
+    if (targetIdx !== -1) {
+      scrollToThumbnail(targetIdx);
+    }
+  };
+
   const handleColorSelect = (color) => {
+    if (!color) return;
     setSelectedColor(color);
-    const mainImg = color.images?.[0] || color.image || product.mainImage;
+    const mainImg =
+      color.thumbnail || color.images?.[0] || color.image || activeProduct.mainImage || '';
     setMainImage(mainImg);
     setCartMessage('');
     scrollToColorThumbnail(color.id);
+    scrollToColorSwatch(color.id);
   };
 
-  const handleThumbnailSelect = (thumb) => {
+  const handleThumbnailSelect = (thumb, index) => {
+    if (!thumb) return;
     setMainImage(thumb.src);
-  };
-
-  const scrollVertical = (direction) => {
-    if (verticalTrackRef.current) {
-      verticalTrackRef.current.scrollBy({
-        top: direction === 'up' ? -120 : 120,
-        behavior: 'smooth',
-      });
+    let parentColor = null;
+    if (thumb.color) {
+      parentColor = thumb.color;
+    } else if (thumb.colorId) {
+      parentColor = activeProduct?.colors?.find((c) => c.id === thumb.colorId) || null;
+    }
+    if (parentColor) {
+      setSelectedColor(parentColor);
+    }
+    setCartMessage('');
+    if (typeof index === 'number') {
+      scrollToThumbnail(index);
+    } else {
+      const foundIdx = allThumbnails.findIndex(
+        (t) => t === thumb || (t.src === thumb.src && t.colorId === thumb.colorId),
+      );
+      if (foundIdx !== -1) scrollToThumbnail(foundIdx);
     }
   };
 
-  const scrollHorizontal = (direction) => {
-    if (colorTrackRef.current) {
-      colorTrackRef.current.scrollBy({
-        left: direction === 'left' ? -120 : 120,
-        behavior: 'smooth',
-      });
+  const handleVerticalArrow = (direction) => {
+    if (!allThumbnails.length) return;
+    let currentIdx = allThumbnails.findIndex(
+      (t) => t.src === mainImage && (selectedColor?.id ? t.colorId === selectedColor.id : true),
+    );
+    if (currentIdx === -1) {
+      currentIdx = allThumbnails.findIndex((t) => t.src === mainImage);
+    }
+    if (currentIdx === -1) {
+      currentIdx = 0;
+    }
+
+    let targetIdx = currentIdx;
+    if (direction === 'up') {
+      targetIdx = Math.max(0, currentIdx - 1);
+    } else if (direction === 'down') {
+      targetIdx = Math.min(allThumbnails.length - 1, currentIdx + 1);
+    }
+
+    const targetThumb = allThumbnails[targetIdx];
+    if (targetThumb) {
+      handleThumbnailSelect(targetThumb, targetIdx);
     }
   };
+
+  const handleHorizontalArrow = (direction) => {
+    if (!activeProduct?.colors?.length) return;
+    let currentIdx = activeProduct.colors.findIndex((c) => c.id === selectedColor?.id);
+    if (currentIdx === -1) {
+      currentIdx = 0;
+    }
+
+    let targetIdx = currentIdx;
+    if (direction === 'left') {
+      targetIdx = Math.max(0, currentIdx - 1);
+    } else if (direction === 'right') {
+      targetIdx = Math.min(activeProduct.colors.length - 1, currentIdx + 1);
+    }
+
+    const targetColor = activeProduct.colors[targetIdx];
+    if (targetColor) {
+      handleColorSelect(targetColor);
+    }
+  };
+
+  const handleVideoArrow = (direction) => {
+    const videos = activeProduct?.videos || [];
+    if (!videos.length) return;
+    let nextIdx = selectedVideoIdx;
+    if (direction === 'left') {
+      nextIdx = Math.max(0, selectedVideoIdx - 1);
+    } else if (direction === 'right') {
+      nextIdx = Math.min(videos.length - 1, selectedVideoIdx + 1);
+    }
+    setSelectedVideoIdx(nextIdx);
+    if (videoTrackRef.current) {
+      const buttons = videoTrackRef.current.querySelectorAll('.product_video_thumb_box');
+      if (buttons[nextIdx]) {
+        buttons[nextIdx].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      }
+    }
+  };
+
+  /* ==========================================================================
+     Admin Draft Handlers
+     ========================================================================== */
+
+  const enterEditMode = () => {
+    if (!product) return;
+    setDraft({
+      ...product,
+      colors: mapProductColorsToForm(product.colors),
+      sizes: [...(product.sizes || [])],
+      stock: { ...(product.stock || {}) },
+      videos: Array.isArray(product.videos) ? [...product.videos] : [],
+      collectionImage: product.collectionImage || '',
+      isHidden: product.isHidden === true || product.is_active === false,
+    });
+    setIsEditing(true);
+    setAdminMessage({ type: '', text: '' });
+  };
+
+  const handleUploadVideo = async (file) => {
+    if (!file || !product?.id) return;
+    setVideoUploading(true);
+    setAdminMessage({ type: '', text: '' });
+    try {
+      const formData = new FormData();
+      formData.append('video', file);
+      const res = await uploadProductVideo(product.id, formData);
+      if (res?.product?.videos) {
+        setDraft((prev) => (prev ? { ...prev, videos: res.product.videos } : prev));
+      }
+      setAdminMessage({ type: 'success', text: 'Vidéo ajoutée avec succès.' });
+      setTimeout(() => setAdminMessage({ type: '', text: '' }), 4000);
+    } catch (err) {
+      setAdminMessage({ type: 'error', text: err.message || 'Erreur lors du téléversement de la vidéo.' });
+    } finally {
+      setVideoUploading(false);
+    }
+  };
+
+  const handleConfirmDeleteVideo = async () => {
+    if (!videoToDelete || !product?.id) return;
+    try {
+      await deleteProductVideo(product.id, videoToDelete.id);
+      setDraft((prev) =>
+        prev
+          ? { ...prev, videos: (prev.videos || []).filter((v) => v.id !== videoToDelete.id) }
+          : prev,
+      );
+      if (selectedVideoIdx >= (activeProduct?.videos?.length || 1) - 1) {
+        setSelectedVideoIdx(Math.max(0, (activeProduct?.videos?.length || 1) - 2));
+      }
+      setVideoToDelete(null);
+      setAdminMessage({ type: 'success', text: 'Vidéo supprimée.' });
+      setTimeout(() => setAdminMessage({ type: '', text: '' }), 4000);
+    } catch (err) {
+      setAdminMessage({ type: 'error', text: err.message || 'Erreur lors de la suppression de la vidéo.' });
+    }
+  };
+
+  const exitEditMode = () => {
+    setIsEditing(false);
+    setDraft(null);
+    setAdminMessage({ type: '', text: '' });
+    if (product) {
+      setMainImage(product.mainImage || product.colors?.[0]?.thumbnail || '');
+      setSelectedColor(product.colors?.[0] || null);
+    }
+  };
+
+  const updateDraftField = (field, value) => {
+    setDraft((f) => ({ ...f, [field]: value }));
+  };
+
+  const updateDraftColor = (colorIdx, key, value) => {
+    setDraft((f) => {
+      const colors = f.colors.map((c, i) => {
+        if (i !== colorIdx) return c;
+        let val = value;
+        if (key === 'name') {
+          val = val.slice(0, 20);
+        }
+        const updated = { ...c, [key]: val };
+        if (key === 'name') {
+          updated.id = slugify(val) || `color-${i}`;
+        }
+        return updated;
+      });
+      return { ...f, colors };
+    });
+  };
+
+  const handleUploadThumbnail = async (colorIdx, file) => {
+    if (!file) return;
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setAdminMessage({ type: '', text: '' });
+    setDraft((f) => {
+      const colors = f.colors.map((c, i) => {
+        if (i !== colorIdx) return c;
+        return { ...c, thumbnail: url };
+      });
+      const newMain = f.mainImage || url;
+      return { ...f, colors, mainImage: newMain };
+    });
+    if (!mainImage) setMainImage(url);
+  };
+
+  const handleReplaceThumbnail = async (colorIdx, file) => {
+    if (!file) return;
+    const oldThumb = draft.colors[colorIdx]?.thumbnail;
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setAdminMessage({ type: '', text: '' });
+    setDraft((f) => {
+      const colors = f.colors.map((c, i) => {
+        if (i !== colorIdx) return c;
+        return { ...c, thumbnail: url };
+      });
+      let nextMain = f.mainImage;
+      if (nextMain === oldThumb || !nextMain) {
+        nextMain = url;
+      }
+      let collectionImage = f.collectionImage;
+      if (collectionImage === oldThumb) {
+        collectionImage = url;
+      }
+      return { ...f, colors, mainImage: nextMain, collectionImage };
+    });
+
+    if (mainImage === oldThumb || !mainImage) {
+      setMainImage(url);
+    }
+  };
+
+  const handleAddGalleryImage = async (colorIdx, file) => {
+    if (!file) return;
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setAdminMessage({ type: '', text: '' });
+    setDraft((f) => {
+      const colors = f.colors.map((c, i) => {
+        if (i !== colorIdx) return c;
+        const gallery = [...(c.gallery || []), url];
+        return { ...c, gallery };
+      });
+      return { ...f, colors };
+    });
+  };
+
+  const handleReplaceGalleryImage = async (colorIdx, galleryIdx, file) => {
+    if (!file) return;
+    const oldUrl = draft.colors[colorIdx]?.gallery?.[galleryIdx];
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setAdminMessage({ type: '', text: '' });
+    setDraft((f) => {
+      const colors = f.colors.map((c, i) => {
+        if (i !== colorIdx) return c;
+        const gallery = [...(c.gallery || [])];
+        gallery[galleryIdx] = url;
+        return { ...c, gallery };
+      });
+      let nextMain = f.mainImage;
+      if (nextMain === oldUrl) {
+        nextMain = url;
+      }
+      let collectionImage = f.collectionImage;
+      if (collectionImage === oldUrl) {
+        collectionImage = url;
+      }
+      return { ...f, colors, mainImage: nextMain, collectionImage };
+    });
+
+    if (mainImage === oldUrl) {
+      setMainImage(url);
+    }
+  };
+
+  const handleRemoveGalleryImage = (colorIdx, galleryIdx) => {
+    const oldUrl = draft.colors[colorIdx]?.gallery?.[galleryIdx];
+    setDraft((f) => {
+      const colors = f.colors.map((c, i) => {
+        if (i !== colorIdx) return c;
+        const gallery = (c.gallery || []).filter((_, idx) => idx !== galleryIdx);
+        return { ...c, gallery };
+      });
+
+      let nextMain = f.mainImage;
+      if (nextMain === oldUrl) {
+        const remainingImages = colors.flatMap((c) => [c.thumbnail, ...(c.gallery || [])]).filter(Boolean);
+        nextMain = remainingImages[0] || f.collectionImage || '';
+      }
+      return { ...f, colors, mainImage: nextMain };
+    });
+
+    if (mainImage === oldUrl) {
+      const remainingImages = draft.colors
+        .flatMap((c, i) =>
+          i === colorIdx
+            ? [c.thumbnail, ...(c.gallery || []).filter((_, idx) => idx !== galleryIdx)]
+            : [c.thumbnail, ...(c.gallery || [])],
+        )
+        .filter(Boolean);
+      setMainImage(remainingImages[0] || '');
+    }
+  };
+
+  const handleRemoveColor = (colorIdx) => {
+    const removedColor = draft.colors[colorIdx];
+    const removedImages = [removedColor?.thumbnail, ...(removedColor?.gallery || [])].filter(Boolean);
+
+    setDraft((f) => {
+      const colors = f.colors.filter((_, i) => i !== colorIdx);
+      let nextMain = f.mainImage;
+      if (removedImages.includes(nextMain)) {
+        const remainingImages = colors.flatMap((c) => [c.thumbnail, ...(c.gallery || [])]).filter(Boolean);
+        nextMain = remainingImages[0] || f.collectionImage || '';
+      }
+      return { ...f, colors, mainImage: nextMain };
+    });
+
+    if (selectedColor?.id === removedColor?.id) {
+      const nextColor = draft.colors.find((_, i) => i !== colorIdx) || null;
+      setSelectedColor(nextColor);
+      if (nextColor) {
+        setMainImage(nextColor.thumbnail || nextColor.gallery?.[0] || '');
+      }
+    }
+  };
+
+  const handleAddColor = () => {
+    const nextIdx = draft.colors.length + 1;
+    const newColor = {
+      id: `color-${nextIdx}`,
+      name: `Couleur ${nextIdx}`,
+      thumbnail: '',
+      gallery: [],
+    };
+    setDraft((f) => ({
+      ...f,
+      colors: [...f.colors, newColor],
+    }));
+    setSelectedColor(newColor);
+  };
+
+  const handleAddSize = () => {
+    setDraft((f) => ({
+      ...f,
+      sizes: [...f.sizes, ''],
+    }));
+  };
+
+  const handleUpdateSize = (index, value) => {
+    const cleanVal = value.replace(/\D/g, '').slice(0, 2);
+    setDraft((f) => {
+      const sizes = [...f.sizes];
+      sizes[index] = cleanVal;
+      return { ...f, sizes };
+    });
+  };
+
+  const handleRemoveSize = (index) => {
+    setDraft((f) => ({
+      ...f,
+      sizes: f.sizes.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleUpdateStock = (key, value) => {
+    setDraft((f) => ({
+      ...f,
+      stock: { ...f.stock, [key]: value },
+    }));
+  };
+
+  const handleUploadCollectionImage = async (file) => {
+    if (!file) return;
+    const url = await uploadFile(file);
+    if (!url) return;
+
+    setAdminMessage({ type: '', text: '' });
+    updateDraftField('collectionImage', url);
+  };
+
+  const handleToggleVisibility = async () => {
+    if (isEditing) {
+      updateDraftField('isHidden', !draft.isHidden);
+    } else {
+      try {
+        setSaving(true);
+        setAdminMessage({ type: '', text: '' });
+        const updatedVal = !(product.isHidden === true || product.is_active === false);
+        await updateProduct(product.id, {
+          ...normalizeProduct(product),
+          isHidden: updatedVal,
+          is_active: !updatedVal,
+        });
+        setAdminMessage({
+          type: updatedVal ? 'warning' : 'success',
+          text: updatedVal ? 'Produit masqué du site.' : 'Produit visible sur le site.',
+        });
+        setTimeout(() => setAdminMessage({ type: '', text: '' }), 4000);
+      } catch (err) {
+        setAdminMessage({
+          type: 'error',
+          text: err.message || 'Erreur lors de la modification de la visibilité.',
+        });
+      } finally {
+        setSaving(false);
+      }
+    }
+  };
+
+  const handleSave = async () => {
+    if (!draft?.name?.trim()) {
+      setAdminMessage({ type: 'error', text: 'Le nom du produit est requis.' });
+      return;
+    }
+    if (!draft?.category?.trim()) {
+      setAdminMessage({ type: 'error', text: 'Veuillez sélectionner une catégorie.' });
+      return;
+    }
+    if (!draft?.description?.trim()) {
+      setAdminMessage({ type: 'error', text: 'La description est requise.' });
+      return;
+    }
+    const priceNum = Number(draft?.price);
+    if (
+      draft?.price === '' ||
+      draft?.price === null ||
+      draft?.price === undefined ||
+      isNaN(priceNum) ||
+      priceNum <= 0
+    ) {
+      setAdminMessage({ type: 'error', text: 'Le prix est requis et doit être supérieur à 0.' });
+      return;
+    }
+    const discountNum = Number(draft?.discount ?? 0);
+    if (isNaN(discountNum) || discountNum < 0) {
+      setAdminMessage({ type: 'error', text: 'La remise doit être positive.' });
+      return;
+    }
+    if (discountNum > priceNum) {
+      setAdminMessage({ type: 'error', text: 'La remise ne peut pas être supérieure au prix.' });
+      return;
+    }
+    if (!draft?.collectionImage?.trim()) {
+      setAdminMessage({ type: 'error', text: 'Veuillez ajouter une image de collection.' });
+      return;
+    }
+    const validSizes = (draft?.sizes || []).map((s) => s.trim()).filter(Boolean);
+    if (validSizes.length === 0) {
+      setAdminMessage({ type: 'error', text: 'Veuillez ajouter au moins une taille.' });
+      return;
+    }
+    const rawColors = draft?.colors || [];
+    if (rawColors.length === 0) {
+      setAdminMessage({ type: 'error', text: 'Veuillez ajouter au moins une couleur.' });
+      return;
+    }
+    for (let i = 0; i < rawColors.length; i++) {
+      const c = rawColors[i];
+      if (!c.name?.trim()) {
+        setAdminMessage({ type: 'error', text: `Le nom de la couleur ${i + 1} est requis.` });
+        return;
+      }
+      const thumb = (c.thumbnail || c.images?.[0] || c.image || '').trim();
+      if (!thumb) {
+        setAdminMessage({
+          type: 'error',
+          text: `Veuillez ajouter une miniature pour la couleur "${c.name.trim()}".`,
+        });
+        return;
+      }
+    }
+
+    setSaving(true);
+    setAdminMessage({ type: '', text: '' });
+
+    try {
+      const normalized = normalizeProduct(draft);
+      await updateProduct(product.id, normalized);
+      setIsEditing(false);
+      setDraft(null);
+      setAdminMessage({ type: 'success', text: 'Modifications enregistrées avec succès.' });
+      setTimeout(() => setAdminMessage({ type: '', text: '' }), 4000);
+    } catch (err) {
+      setAdminMessage({ type: 'error', text: err.message || 'Erreur lors de la sauvegarde.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce produit ? Cette action est irréversible.')) return;
+    setSaving(true);
+    try {
+      await deleteProduct(product.id);
+      navigate('/');
+    } catch (err) {
+      setAdminMessage({ type: 'error', text: err.message || 'Erreur lors de la suppression.' });
+      setSaving(false);
+    }
+  };
+
+  /* ==========================================================================
+     Customer Action Handlers
+     ========================================================================== */
 
   const recommendations = useMemo(() => {
-    if (!product) return [];
-    return products.filter((p) => p.category === product.category && p.id !== product.id && !p.isHidden).slice(0, 4);
-  }, [product, products]);
+    if (!activeProduct) return [];
+    return products
+      .filter((p) => p.category === activeProduct.category && p.id !== activeProduct.id && (isAdmin || !p.isHidden))
+      .slice(0, 4);
+  }, [activeProduct, products, isAdmin]);
 
-  const availableStock = product
-    ? getAvailableStock(product, selectedColor?.id, selectedSize)
+  const availableStock = activeProduct
+    ? getAvailableStock(activeProduct, selectedColor?.id, selectedSize)
     : 0;
 
   const stockStatus = getStockStatus(availableStock);
@@ -138,30 +989,47 @@ export default function Product() {
     return parts.join(' · ') || 'Standard';
   };
 
+  const currentVariant = useMemo(() => {
+    if (!activeProduct?.variants?.length) return null;
+    return (
+      activeProduct.variants.find(
+        (v) =>
+          (!selectedColor?.id || v.colorSlug === selectedColor.id) &&
+          (!selectedSize || v.size === selectedSize),
+      ) ||
+      activeProduct.variants.find(
+        (v) => !selectedColor?.id || v.colorSlug === selectedColor.id,
+      ) ||
+      activeProduct.variants[0] ||
+      null
+    );
+  }, [activeProduct, selectedColor?.id, selectedSize]);
+
+  const isFav = isFavorite(activeProduct?.id, currentVariant?.id);
+
   const buildCartItem = () => ({
-    productId: product.id,
-    name: product.name,
-    price: getEffectivePrice(product),
+    productId: activeProduct.id,
+    variantId: currentVariant?.id ?? null,
+    name: activeProduct.name,
+    price: getEffectivePrice(activeProduct),
     quantity,
-    image: mainImage || product.mainImage,
+    image: mainImage || activeProduct.mainImage,
     colorId: selectedColor?.id ?? null,
     colorName: selectedColor?.name ?? '',
     size: selectedSize ?? null,
     details: buildDetails(),
   });
 
-  const { isAdmin } = useAuth();
-
   const validateSelection = () => {
     if (isAdmin) {
       setCartMessage('Les administrateurs ne peuvent pas passer de commandes ou ajouter de favoris.');
       return false;
     }
-    if (product.colors?.length && !selectedColor) {
+    if (activeProduct.colors?.length && !selectedColor) {
       setCartMessage('Veuillez sélectionner une couleur.');
       return false;
     }
-    if (product.sizes?.length && !selectedSize) {
+    if (activeProduct.sizes?.length && !selectedSize) {
       setCartMessage('Veuillez sélectionner une taille.');
       return false;
     }
@@ -181,42 +1049,17 @@ export default function Product() {
       setCartMessage('Les administrateurs ne peuvent pas passer de commandes.');
       return;
     }
-    if (!product || !validateSelection()) return;
+    if (!activeProduct || !validateSelection()) return;
     try {
       await addItem(buildCartItem());
       setCartMessage('Produit ajouté au panier.');
     } catch (err) {
-      setCartMessage(err.message || 'Impossible d\'ajouter au panier.');
+      setCartMessage(err.message || "Impossible d'ajouter au panier.");
     }
   };
 
-  const handleShare = async () => {
-    const url = window.location.href;
-    const shareData = {
-      title: product.name,
-      text: `Découvrez ${product.name} sur Silky`,
-      url,
-    };
-
-    if (navigator.share) {
-      try {
-        await navigator.share(shareData);
-        return;
-      } catch {
-        /* user cancelled or unsupported */
-      }
-    }
-    setShareOpen((v) => !v);
-  };
-
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCartMessage('Lien copié dans le presse-papiers.');
-      setShareOpen(false);
-    } catch {
-      setCartMessage('Impossible de copier le lien.');
-    }
+  const handleShare = () => {
+    setShareOpen(true);
   };
 
   const handleCommander = () => {
@@ -224,16 +1067,16 @@ export default function Product() {
       setCartMessage('Les administrateurs ne peuvent pas passer de commandes.');
       return;
     }
-    if (!product || !validateSelection()) return;
+    if (!activeProduct || !validateSelection()) return;
     setBuyNowItem({
-      productId: product.id,
+      productId: activeProduct.id,
       colorId: selectedColor?.id ?? null,
       colorName: selectedColor?.name ?? '',
       size: selectedSize ?? null,
       quantity,
-      name: product.name,
-      price: getEffectivePrice(product),
-      image: mainImage || product.mainImage,
+      name: activeProduct.name,
+      price: getEffectivePrice(activeProduct),
+      image: mainImage || activeProduct.mainImage,
       details: buildDetails(),
     });
     setBuyNowModalOpen(true);
@@ -247,7 +1090,8 @@ export default function Product() {
     );
   }
 
-  if (!product || product.isHidden) {
+  // Hidden guard: only non-admins see the "Not available" screen for hidden products
+  if (!product || (product.isHidden && !isAdmin)) {
     return (
       <main className="product_page_wrapper">
         <div style={{ padding: 40, textAlign: 'center' }}>
@@ -260,112 +1104,535 @@ export default function Product() {
     );
   }
 
-  const shareUrl = encodeURIComponent(window.location.href);
-  const shareText = encodeURIComponent(`Découvrez ${product.name} sur Silky`);
+  const isHidden = isEditing
+    ? draft?.isHidden
+    : product.isHidden === true || product.is_active === false;
 
   return (
     <>
+      {/* ==========================================================================
+         Admin Product Control Bar
+         ========================================================================== */}
+      {isAdmin && (
+        <div className="admin_product_bar">
+          <div className="admin_product_bar_inner">
+            <div className="admin_product_bar_left">
+              <button
+                type="button"
+                className="admin_visibility_toggle_btn"
+                onClick={handleToggleVisibility}
+                disabled={saving}
+              >
+                {isHidden ? 'Rendre visible' : 'Masquer du site'}
+              </button>
+              <span className={`admin_visibility_badge ${isHidden ? 'hidden' : 'visible'}`}>
+                {isHidden ? '● Masqué du site' : '● Visible sur le site'}
+              </span>
+            </div>
+
+            <div className="admin_product_bar_right">
+              <button
+                type="button"
+                className={`admin_bar_btn admin_bar_btn_edit ${isEditing ? 'active' : ''}`}
+                onClick={() => {
+                  if (isEditing) {
+                    exitEditMode();
+                  } else {
+                    enterEditMode();
+                  }
+                }}
+                disabled={saving}
+              >
+                {isEditing ? "Annuler l'édition" : 'Modifier'}
+              </button>
+
+              {isEditing && (
+                <button
+                  type="button"
+                  className="admin_bar_btn admin_bar_btn_save"
+                  onClick={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="admin_bar_btn admin_bar_btn_delete"
+                onClick={handleDelete}
+                disabled={saving}
+              >
+                Supprimer
+              </button>
+            </div>
+          </div>
+
+          {adminMessage.text && (
+            <div className={`admin_product_bar_msg ${adminMessage.type}`}>
+              {adminMessage.text}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ==========================================================================
+         Product Page Main Layout
+         ========================================================================== */}
       <main className="product_page_wrapper">
+        {/* Vertical Thumbnails Column (Left) */}
         <div className="thumbnails_vertical_container">
-          <button type="button" className="scroll_arrow" onClick={() => scrollVertical('up')}>
-            &uarr;
+          <button
+            type="button"
+            className="scroll_arrow"
+            onClick={() => handleVerticalArrow('up')}
+            aria-label="Défiler vers le haut"
+          >
+            <span className="scroll_arrow_icon_vertical">❮</span>
           </button>
 
           <div className="vertical_thumbnails_track" ref={verticalTrackRef}>
-            {allThumbnails.map((thumb, index) => (
-              <button
-                key={`${thumb.src}-${index}`}
-                type="button"
-                className={`thumb_box_vertical${mainImage === thumb.src ? ' active' : ''}`}
-                onClick={() => handleThumbnailSelect(thumb)}
-              >
-                <img src={thumb.src} alt="" />
-              </button>
-            ))}
+            {isEditing && draft?.colors?.length > 0 ? (
+              // Edit-mode vertical image sequence by color
+              draft.colors.map((color, colorIdx) => {
+                const colorThumb = color.thumbnail || color.images?.[0] || color.image;
+                const galleryImgs = color.gallery || (color.images?.length > 1 ? color.images.slice(1) : []);
+
+                return (
+                  <div key={color.id || colorIdx} style={{ display: 'contents' }}>
+                    {/* Color Thumbnail in vertical track (No gallery overlay per Requirement 7) */}
+                    {colorThumb && (
+                      <button
+                        type="button"
+                        className={`thumb_box_vertical${
+                          mainImage === colorThumb && selectedColor?.id === color.id ? ' active' : ''
+                        }`}
+                        onClick={() =>
+                          handleThumbnailSelect(
+                            { src: colorThumb, colorId: color.id, color, isThumbnail: true },
+                            allThumbnails.findIndex((t) => t.src === colorThumb && t.colorId === color.id),
+                          )
+                        }
+                      >
+                        <img src={colorThumb} alt="" />
+                      </button>
+                    )}
+
+                    {/* Gallery Images for this color (With overlay per Requirement 6) */}
+                    {galleryImgs.map((galleryImg, galleryIdx) => {
+                      const isMain = draft.mainImage === galleryImg;
+                      const isSelected = mainImage === galleryImg && selectedColor?.id === color.id;
+
+                      return (
+                        <div
+                          key={`${galleryImg}-${galleryIdx}`}
+                          className={`thumb_box_vertical${isSelected ? ' active' : ''}`}
+                          onClick={() =>
+                            handleThumbnailSelect(
+                              { src: galleryImg, colorId: color.id, color, isGallery: true, galleryIdx },
+                              allThumbnails.findIndex((t) => t.src === galleryImg && t.colorId === color.id),
+                            )
+                          }
+                        >
+                          <div className="admin_image_overlay">
+                            {/* Supprimer Gallery Image */}
+                            <button
+                              type="button"
+                              className="admin_overlay_btn admin_overlay_btn_delete"
+                              title="Supprimer l'image"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveGalleryImage(colorIdx, galleryIdx);
+                              }}
+                            >
+                              Supprimer
+                            </button>
+
+                            {/* Modifier Gallery Image */}
+                            <label
+                              className="admin_overlay_btn admin_overlay_btn_edit"
+                              title="Remplacer l'image"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Modifier
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={async (e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) await handleReplaceGalleryImage(colorIdx, galleryIdx, f);
+                                  e.target.value = '';
+                                }}
+                                hidden
+                              />
+                            </label>
+
+                            {/* Principale Gallery Image */}
+                            <button
+                              type="button"
+                              className={`admin_overlay_btn admin_overlay_btn_primary ${isMain ? 'is_primary' : ''}`}
+                              disabled={isMain}
+                              title={isMain ? 'Image principale actuelle' : 'Définir comme principale'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!isMain) updateDraftField('mainImage', galleryImg);
+                              }}
+                            >
+                              Principale
+                            </button>
+                          </div>
+                          <img src={galleryImg} alt="" />
+                        </div>
+                      );
+                    })}
+
+                    {/* Add Gallery Image for this specific color (Requirement 8) */}
+                    <label
+                      className="thumb_box_vertical admin_add_gallery_box"
+                      title={`Ajouter une image galerie pour ${color.name || 'cette couleur'}`}
+                    >
+                      <img src="/pictures/add.png" alt="Ajouter" className="admin_add_gallery_icon" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          if (f) await handleAddGalleryImage(colorIdx, f);
+                          e.target.value = '';
+                        }}
+                        hidden
+                      />
+                    </label>
+                  </div>
+                );
+              })
+            ) : (
+              // Normal Customer view vertical images
+              allThumbnails.map((thumb, index) => {
+                const isSelected =
+                  mainImage === thumb.src &&
+                  (thumb.colorId && selectedColor?.id ? thumb.colorId === selectedColor.id : true);
+                return (
+                  <button
+                    key={`${thumb.src}-${thumb.colorId || ''}-${index}`}
+                    type="button"
+                    className={`thumb_box_vertical${isSelected ? ' active' : ''}`}
+                    onClick={() => handleThumbnailSelect(thumb, index)}
+                  >
+                    <img src={thumb.src} alt="" />
+                  </button>
+                );
+              })
+            )}
           </div>
 
-          <button type="button" className="scroll_arrow" onClick={() => scrollVertical('down')}>
-            &darr;
+          <button
+            type="button"
+            className="scroll_arrow"
+            onClick={() => handleVerticalArrow('down')}
+            aria-label="Défiler vers le bas"
+          >
+            <span className="scroll_arrow_icon_vertical">❯</span>
           </button>
+
         </div>
 
-        <div
-          className="main_image_container"
-          onClick={(e) => {
-            const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
-            const x = Math.max(0, Math.min(100, ((e.clientX - left) / width) * 100));
-            const y = Math.max(0, Math.min(100, ((e.clientY - top) / height) * 100));
-            setZoomPos({ x, y });
-            setIsZoomed((prev) => !prev);
-          }}
-          onMouseMove={(e) => {
-            if (!isZoomed) return;
-            const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
-            const x = Math.max(0, Math.min(100, ((e.clientX - left) / width) * 100));
-            const y = Math.max(0, Math.min(100, ((e.clientY - top) / height) * 100));
-            setZoomPos({ x, y });
-          }}
-          onMouseLeave={() => setIsZoomed(false)}
-        >
-          <img
-            className="main_product_img"
-            src={mainImage || product.mainImage}
-            alt={product.name}
-            style={{
-              transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
-              transform: isZoomed ? 'scale(2.2)' : 'scale(1)',
-              transition: isZoomed ? 'transform-origin 0.05s ease-out, transform 0.15s ease-out' : 'transform 0.25s ease-out',
-              cursor: isZoomed ? 'zoom-out' : 'zoom-in',
+        {/* Main Featured Zoomable Image and Section Actions */}
+        <div className="main_image_column">
+          <div
+            className="main_image_container"
+            onClick={(e) => {
+              const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+              const x = Math.max(0, Math.min(100, ((e.clientX - left) / width) * 100));
+              const y = Math.max(0, Math.min(100, ((e.clientY - top) / height) * 100));
+              setZoomPos({ x, y });
+              setIsZoomed((prev) => !prev);
             }}
-          />
+            onMouseMove={(e) => {
+              if (!isZoomed) return;
+              const { left, top, width, height } = e.currentTarget.getBoundingClientRect();
+              const x = Math.max(0, Math.min(100, ((e.clientX - left) / width) * 100));
+              const y = Math.max(0, Math.min(100, ((e.clientY - top) / height) * 100));
+              setZoomPos({ x, y });
+            }}
+            onMouseLeave={() => setIsZoomed(false)}
+          >
+            <ProductBadges product={activeProduct} />
+            <img
+              className="main_product_img"
+              src={mainImage || activeProduct.mainImage}
+              alt={activeProduct.name}
+              style={{
+                transformOrigin: `${zoomPos.x}% ${zoomPos.y}%`,
+                transform: isZoomed ? 'scale(2.2)' : 'scale(1)',
+                transition: isZoomed
+                  ? 'transform-origin 0.05s ease-out, transform 0.15s ease-out'
+                  : 'transform 0.25s ease-out',
+                cursor: isZoomed ? 'zoom-out' : 'zoom-in',
+              }}
+            />
+          </div>
+
+          <div className="product_section_actions">
+            <button
+              type="button"
+              className="product_section_btn"
+              onClick={() => scrollToSection('product_videos_section')}
+            >
+              Voir la vidéo du produit
+            </button>
+            <button
+              type="button"
+              className="product_section_btn"
+              onClick={() => scrollToSection('product_reviews_container')}
+            >
+              Voir les avis clients
+            </button>
+          </div>
         </div>
 
+        {/* Product Details Panel (Right) */}
         <div className="product_info_panel">
-          <h1 className="product_title">{product.name}</h1>
+          {/* Product Title (Inline editable in edit mode) */}
+          {isEditing ? (
+            <input
+              type="text"
+              className="admin_inline_title"
+              value={draft.name}
+              placeholder="Nom du produit"
+              onChange={(e) => updateDraftField('name', e.target.value)}
+            />
+          ) : (
+            <h1 className="product_title">{activeProduct.name}</h1>
+          )}
 
           <h2 className="section_subtitle">DÉTAILS</h2>
-          <p className="product_description">{product.description}</p>
 
-          {product.colors?.length > 0 && (
+          {/* Product Description (Inline editable in edit mode) */}
+          {isEditing ? (
+            <textarea
+              className="admin_inline_desc"
+              value={draft.description}
+              placeholder="Description du produit..."
+              onChange={(e) => updateDraftField('description', e.target.value)}
+            />
+          ) : (
+            <p className="product_description">{activeProduct.description}</p>
+          )}
+
+          {/* Color Section */}
+          {(activeProduct.colors?.length > 0 || isEditing) && (
             <div className="color_section">
               <div className="color_header_line">
                 <span className="section_subtitle" style={{ marginBottom: 0 }}>
                   COULEUR
                 </span>
-                <span className="selected_value_text">
-                  {selectedColor?.name ?? 'Sélectionnez une couleur'}
-                </span>
+                {isEditing && selectedColor ? (
+                  <input
+                    type="text"
+                    className="admin_inline_color_name_input"
+                    value={selectedColor.name || ''}
+                    placeholder="Nom de la couleur"
+                    maxLength={20}
+                    onChange={(e) => {
+                      const val = e.target.value.slice(0, 20);
+                      const colorIdx = draft.colors.findIndex(
+                        (c, i) => c === selectedColor || c.id === selectedColor.id || `color-${i}` === selectedColor.id,
+                      );
+                      if (colorIdx !== -1) {
+                        const newId = slugify(val) || `color-${colorIdx}`;
+                        updateDraftColor(colorIdx, 'name', val);
+                        setSelectedColor((prev) => ({
+                          ...prev,
+                          name: val,
+                          id: newId,
+                        }));
+                      }
+                    }}
+                  />
+                ) : (
+                  <span className="selected_value_text">
+                    {selectedColor?.name ?? 'Sélectionnez une couleur'}
+                  </span>
+                )}
               </div>
 
               <div className="color_carousel_wrapper">
-                <button type="button" className="scroll_arrow" onClick={() => scrollHorizontal('left')}>
-                  &larr;
+                <button
+                  type="button"
+                  className="scroll_arrow"
+                  onClick={() => handleHorizontalArrow('left')}
+                  aria-label="Défiler vers la gauche"
+                >
+                  ❮
                 </button>
 
                 <div className="horizontal_colors_track" ref={colorTrackRef}>
-                  {product.colors.map((color) => {
-                    const colorMainImage = color.images?.[0] || color.image || product.mainImage;
-                    return (
+                  {isEditing && draft ? (
+                    // Edit mode horizontal color thumbnails
+                    <>
+                      {draft.colors.map((color, colorIdx) => {
+                        const colorMainImage =
+                          color.thumbnail || color.images?.[0] || color.image || '';
+                        const isMain = draft.mainImage === color.thumbnail;
+
+                        if (colorMainImage) {
+                          return (
+                            <div
+                              key={color.id || colorIdx}
+                              className={`color_thumb_box${
+                                selectedColor?.id === color.id ? ' active' : ''
+                              }`}
+                              onClick={() => handleColorSelect(color)}
+                              title={color.name}
+                            >
+                              <div className="admin_image_overlay">
+                                {/* Supprimer la couleur (Requirement 9) */}
+                                <button
+                                  type="button"
+                                  className="admin_overlay_btn admin_overlay_btn_delete"
+                                  title="Supprimer toute la couleur"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveColor(colorIdx);
+                                  }}
+                                >
+                                  Supprimer
+                                </button>
+
+                                {/* Modifier la miniature de la couleur (Requirement 9) */}
+                                <label
+                                  className="admin_overlay_btn admin_overlay_btn_edit"
+                                  title="Remplacer la miniature"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  Modifier
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={async (e) => {
+                                      const f = e.target.files?.[0];
+                                      if (f) await handleReplaceThumbnail(colorIdx, f);
+                                      e.target.value = '';
+                                    }}
+                                    hidden
+                                  />
+                                </label>
+
+                                {/* Principale miniature (Requirement 9) */}
+                                <button
+                                  type="button"
+                                  className={`admin_overlay_btn admin_overlay_btn_primary ${
+                                    isMain ? 'is_primary' : ''
+                                  }`}
+                                  disabled={isMain}
+                                  title={
+                                    isMain
+                                      ? 'Image principale actuelle'
+                                      : 'Définir comme principale'
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!isMain && color.thumbnail) {
+                                      updateDraftField('mainImage', color.thumbnail);
+                                    }
+                                  }}
+                                >
+                                  Principale
+                                </button>
+                              </div>
+                              <img src={colorMainImage} alt={color.name} />
+                            </div>
+                          );
+                        }
+
+                        // Placeholder for new empty color thumbnail
+                        return (
+                          <label
+                            key={color.id || colorIdx}
+                            className={`color_thumb_box admin_add_color_box${
+                              selectedColor?.id === color.id ? ' active' : ''
+                            }`}
+                            title="Téléverser une miniature"
+                            onClick={() => handleColorSelect(color)}
+                          >
+                            <img
+                              src="/pictures/add.png"
+                              alt="Ajouter"
+                              className="admin_add_color_icon"
+                            />
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0];
+                                if (f) await handleUploadThumbnail(colorIdx, f);
+                                e.target.value = '';
+                              }}
+                              hidden
+                            />
+                          </label>
+                        );
+                      })}
+
+                      {/* Add Color Button (Requirement 10) */}
                       <button
-                        key={color.id}
                         type="button"
-                        className={`color_thumb_box${selectedColor?.id === color.id ? ' active' : ''}`}
-                        onClick={() => handleColorSelect(color)}
+                        className="color_thumb_box admin_add_color_box"
+                        title="Ajouter une nouvelle couleur"
+                        onClick={handleAddColor}
                       >
-                        <img src={colorMainImage} alt={color.name} />
+                        <img
+                          src="/pictures/add.png"
+                          alt="+ Couleur"
+                          className="admin_add_color_icon"
+                        />
                       </button>
-                    );
-                  })}
+                    </>
+                  ) : (
+                    // Customer view horizontal color swatches
+                    activeProduct.colors.map((color) => {
+                      const colorMainImage =
+                        color.thumbnail || color.images?.[0] || color.image || activeProduct.mainImage;
+                      const isColorUnavailable =
+                        activeProduct.sizes?.length > 0
+                          ? selectedSize
+                            ? getAvailableStock(activeProduct, color.id, selectedSize) <= 0
+                            : activeProduct.sizes.every(
+                                (s) => getAvailableStock(activeProduct, color.id, s) <= 0,
+                              )
+                          : getAvailableStock(activeProduct, color.id, null) <= 0;
+                      return (
+                        <button
+                          key={color.id}
+                          type="button"
+                          className={`color_thumb_box${
+                            selectedColor?.id === color.id ? ' active' : ''
+                          }${isColorUnavailable ? ' unavailable' : ''}`}
+                          onClick={() => handleColorSelect(color)}
+                          title={isColorUnavailable ? `${color.name} (Indisponible)` : color.name}
+                        >
+                          <img src={colorMainImage} alt={color.name} />
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
 
-                <button type="button" className="scroll_arrow" onClick={() => scrollHorizontal('right')}>
-                  &rarr;
+                <button
+                  type="button"
+                  className="scroll_arrow"
+                  onClick={() => handleHorizontalArrow('right')}
+                  aria-label="Défiler vers la droite"
+                >
+                  ❯
                 </button>
               </div>
             </div>
           )}
 
-          {product.sizes?.length > 0 && (
+          {/* Sizes Section */}
+          {(activeProduct.sizes?.length > 0 || isEditing) && (
             <div className="size_section">
               <div className="color_header_line">
                 <span className="section_subtitle" style={{ marginBottom: 0 }}>
@@ -377,138 +1644,428 @@ export default function Product() {
               </div>
 
               <div className="sizes_grid">
-                {product.sizes.map((size) => (
-                  <button
-                    key={size}
-                    type="button"
-                    className="size_box"
-                    style={selectedSize === size ? { backgroundColor: '#000', color: '#fff' } : undefined}
-                    onClick={() => {
-                      setSelectedSize(size);
-                      setCartMessage('');
-                    }}
-                  >
-                    {size}
-                  </button>
-                ))}
+                {isEditing && draft ? (
+                  // Edit mode sizes with inline inputs and delete buttons
+                  <>
+                    {draft.sizes.map((size, i) => (
+                      <div key={i} className="admin_size_box_editable">
+                        <input
+                          type="text"
+                          className="admin_size_input"
+                          value={size}
+                          placeholder="38"
+                          maxLength={2}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          onChange={(e) => handleUpdateSize(i, e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="admin_size_remove_btn"
+                          title="Supprimer la taille"
+                          onClick={() => handleRemoveSize(i)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    {/* Add Size Button (Requirement 11) */}
+                    <button
+                      type="button"
+                      className="admin_add_size_btn"
+                      title="Ajouter une taille"
+                      onClick={handleAddSize}
+                    >
+                      +
+                    </button>
+                  </>
+                ) : (
+                  // Customer view size boxes
+                  activeProduct.sizes.map((size) => {
+                    const isSizeUnavailable =
+                      activeProduct.colors?.length > 0
+                        ? selectedColor
+                          ? getAvailableStock(activeProduct, selectedColor.id, size) <= 0
+                          : activeProduct.colors.every(
+                              (c) => getAvailableStock(activeProduct, c.id, size) <= 0,
+                            )
+                        : getAvailableStock(activeProduct, null, size) <= 0;
+                    return (
+                      <button
+                        key={size}
+                        type="button"
+                        className={`size_box${isSizeUnavailable ? ' unavailable' : ''}`}
+                        style={selectedSize === size ? { backgroundColor: '#000', color: '#fff' } : undefined}
+                        onClick={() => {
+                          setSelectedSize(size);
+                          setCartMessage('');
+                        }}
+                        title={isSizeUnavailable ? `Taille ${size} (Indisponible)` : `Taille ${size}`}
+                      >
+                        {size}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
 
-          <div className="price_section">
-            <span className="price_label">Prix</span>
-            <ProductPrice product={product} size="large" />
-          </div>
-
-          <div className="action_row">
-            <div className="quantity_wrapper">
-              <div className="quantity_box">
-                <button
-                  type="button"
-                  className="qty_btn"
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                >
-                  -
-                </button>
-                <input type="text" value={quantity} readOnly className="qty_input" />
-                <button
-                  type="button"
-                  className="qty_btn"
-                  onClick={() => setQuantity((q) => Math.min(q + 1, Math.max(availableStock, 1)))}
-                >
-                  +
-                </button>
-              </div>
-              <span className="qty_label">Quantité</span>
-            </div>
-
-            <button type="button" className="add_to_cart_btn" onClick={handleAddToCart}>
-              Ajouter Au Panier
-            </button>
-
-            <button
-              type="button"
-              className={`icon_action_btn${isFavorite(product.id) ? ' icon_action_btn_active' : ''}`}
-              onClick={() => {
-                if (isAdmin) {
-                  setCartMessage('Les administrateurs ne peuvent pas ajouter de favoris.');
-                  return;
-                }
-                toggleFavorite(product.id);
-              }}
-            >
-              <div className="custom_icon_gap">
-                <img src="/pictures/heart.png" alt="Favoris" />
-              </div>
-              <span>{isFavorite(product.id) ? 'Ajouté' : 'Favoris'}</span>
-            </button>
-
-            <div className="share_action_wrapper">
-              <button type="button" className="icon_action_btn" onClick={handleShare}>
-                <div className="custom_icon_gap">
-                  <img src="/pictures/share.png" alt="Partagez" />
-                </div>
-                <span>Partagez</span>
+          {/* Stock par variante Collapsible Section (Requirement 12) */}
+          {isEditing && draft && (
+            <div className="admin_stock_collapsible">
+              <button
+                type="button"
+                className="admin_stock_header"
+                onClick={() => setStockExpanded((prev) => !prev)}
+              >
+                <span>Stock par variante</span>
+                <span className={`admin_stock_chevron ${stockExpanded ? 'open' : ''}`}>
+                  {stockExpanded ? '▼' : '▶'}
+                </span>
               </button>
 
-              {shareOpen && (
-                <div className="share_dropdown">
-                  <a
-                    href={`https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Facebook
-                  </a>
-                  <a
-                    href={`https://twitter.com/intent/tweet?url=${shareUrl}&text=${shareText}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    X / Twitter
-                  </a>
-                  <a
-                    href={`https://wa.me/?text=${shareText}%20${shareUrl}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    WhatsApp
-                  </a>
-                  <button type="button" onClick={copyLink}>
-                    Copier le lien
-                  </button>
+              {stockExpanded && (
+                <div className="admin_stock_content">
+                  {(() => {
+                    const stockMatrix = buildStockMatrix(draft);
+                    if (stockMatrix.length === 0) {
+                      return (
+                        <p style={{ fontSize: 13, color: '#666' }}>
+                          Ajoutez des couleurs et tailles pour gérer le stock.
+                        </p>
+                      );
+                    }
+                    return (
+                      <table className="admin_stock_table">
+                        <thead>
+                          <tr>
+                            <th>Variante</th>
+                            <th>Quantité</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stockMatrix.map(({ key, label }) => (
+                            <tr key={key}>
+                              <td>{label}</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={draft.stock[key] ?? 0}
+                                  onChange={(e) => handleUpdateStock(key, e.target.value)}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
                 </div>
               )}
             </div>
-          </div>
+          )}
 
-          {cartMessage && <p className="stock_status_text">{cartMessage}</p>}
-
-          <p className={`stock_status_text${stockStatus.inStock ? '' : ' out-of-stock'}`}>
-            Stock: {stockStatus.text}
-          </p>
-
-          <button type="button" className="buy_now_btn" onClick={handleCommander}>
-            Commander
-          </button>
-
-          <div className="guarantee_row">
-            <div className="badge_icon_gap">
-              <img src="/pictures/truckdilevery.png" alt="Livraison" />
+          {/* Collection Image Editing Card (Requirement 13) */}
+          {isEditing && draft && (
+            <div className="admin_collection_edit_card">
+              <div className="admin_collection_edit_left">
+                {draft.collectionImage ? (
+                  <img
+                    src={draft.collectionImage}
+                    alt="Collection"
+                    className="admin_collection_thumb_preview"
+                  />
+                ) : (
+                  <div
+                    className="admin_collection_thumb_preview"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 10,
+                      color: '#888',
+                    }}
+                  >
+                    Aucune
+                  </div>
+                )}
+                <div>
+                  <strong style={{ fontSize: 13, display: 'block', color: '#111827' }}>
+                    Image de collection (accueil)
+                  </strong>
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>
+                    Utilisée pour le catalogue et les cartes de recommandation
+                  </span>
+                </div>
+              </div>
+              <label className="admin_collection_upload_btn">
+                {draft.collectionImage ? 'Remplacer' : 'Téléverser'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) await handleUploadCollectionImage(f);
+                    e.target.value = '';
+                  }}
+                  hidden
+                />
+              </label>
             </div>
-            <span>Livraison chez vous sous 24h - 48h.</span>
-          </div>
+          )}
 
-          <div className="guarantee_row">
-            <div className="badge_icon_gap">
-              <img src="/pictures/echange.png" alt="Échange" />
+          {/* Product Videos Editing Card (Admin) */}
+          {isEditing && draft && (
+            <div className="admin_videos_edit_card">
+              <div className="admin_videos_header">
+                <div>
+                  <strong style={{ fontSize: 13, display: 'block', color: '#111827' }}>
+                    Vidéos du produit ({draft.videos?.length || 0})
+                  </strong>
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>
+                    Affichées dans la section vidéo (format 9:16)
+                  </span>
+                </div>
+                <label className="admin_collection_upload_btn">
+                  {videoUploading ? 'Téléversement...' : '+ Ajouter une vidéo'}
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/ogg,video/quicktime"
+                    disabled={videoUploading}
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (f) await handleUploadVideo(f);
+                      e.target.value = '';
+                    }}
+                    hidden
+                  />
+                </label>
+              </div>
+
+              {draft.videos?.length > 0 && (
+                <div className="admin_videos_list">
+                  {draft.videos.map((v, i) => (
+                    <div key={v.id || i} className="admin_video_item">
+                      <div className="admin_video_item_left">
+                        <video src={v.videoUrl} className="admin_video_item_preview" muted preload="metadata" />
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#333' }}>
+                          Vidéo {i + 1}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="admin_video_delete_btn"
+                        onClick={() => setVideoToDelete(v)}
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <span>Échange possible dans 48 heures.</span>
-          </div>
+          )}
+
+          {/* Price & Discount Section (Inline editable in edit mode - Requirement 5) */}
+          {isEditing && draft ? (
+            <div className="admin_price_edit_container">
+              <div className="admin_price_row">
+                <div className="admin_price_field">
+                  <label>Prix (TND):</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    className="admin_inline_num_input"
+                    value={draft.price}
+                    onChange={(e) => updateDraftField('price', e.target.value)}
+                  />
+                </div>
+                <div className="admin_price_field">
+                  <label>Remise (TND):</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    className="admin_inline_num_input"
+                    value={draft.discount ?? 0}
+                    onChange={(e) => updateDraftField('discount', e.target.value)}
+                  />
+                </div>
+              </div>
+              {Number(draft.discount) > 0 && (
+                <div className="admin_discount_preview_text">
+                  Prix effectif après remise : <strong>{formatPrice(getEffectivePrice(draft))}</strong>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="price_section">
+              <span className="price_label">Prix</span>
+              <ProductPrice product={activeProduct} size="large" />
+            </div>
+          )}
+
+          {/* Action Row, Stock, Buy Now, Guarantees — hidden in edit mode */}
+          {!isEditing && (
+            <>
+              {/* Action Row */}
+              <div className="action_row">
+                <div className="quantity_wrapper">
+                  <div className="quantity_box">
+                    <button
+                      type="button"
+                      className="qty_btn"
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                    >
+                      -
+                    </button>
+                    <input type="text" value={quantity} readOnly className="qty_input" />
+                    <button
+                      type="button"
+                      className="qty_btn"
+                      onClick={() => setQuantity((q) => Math.min(q + 1, Math.max(availableStock, 1)))}
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span className="qty_label">Quantité</span>
+                </div>
+
+                <button type="button" className="add_to_cart_btn" onClick={handleAddToCart}>
+                  Ajouter Au Panier
+                </button>
+
+                <button
+                  type="button"
+                  className={`icon_action_btn${isFav ? ' icon_action_btn_active' : ''}`}
+                  onClick={() => {
+                    if (isAdmin) {
+                      setCartMessage('Les administrateurs ne peuvent pas ajouter de favoris.');
+                      return;
+                    }
+                    toggleFavorite({
+                      productId: activeProduct.id,
+                      variantId: currentVariant?.id ?? null,
+                      colorId: selectedColor?.id ?? null,
+                      size: selectedSize ?? null,
+                    });
+                  }}
+                >
+                  <div className="custom_icon_gap">
+                    <img src="/pictures/heart.png" alt="Favoris" />
+                  </div>
+                  <span>{isFav ? 'Ajouté' : 'Favoris'}</span>
+                </button>
+
+                <button type="button" className="icon_action_btn" onClick={handleShare}>
+                  <div className="custom_icon_gap">
+                    <img src="/pictures/share.png" alt="Partagez" />
+                  </div>
+                  <span>Partagez</span>
+                </button>
+              </div>
+
+              {cartMessage && <p className="stock_status_text stock_status_message">{cartMessage}</p>}
+
+              <p
+                className={`stock_status_text stock_${
+                  stockStatus.status || (stockStatus.inStock ? 'available' : 'out')
+                }${stockStatus.inStock ? '' : ' out-of-stock'}`}
+              >
+                <span className="stock_bullet">•</span> Stock: {stockStatus.text}
+              </p>
+
+              <button type="button" className="buy_now_btn" onClick={handleCommander}>
+                Commander
+              </button>
+
+              <div className="guarantee_row">
+                <div className="badge_icon_gap">
+                  <img src="/pictures/truckdilevery.png" alt="Livraison" />
+                </div>
+                <span>Livraison chez vous sous 24h - 48h.</span>
+              </div>
+
+              <div className="guarantee_row">
+                <div className="badge_icon_gap">
+                  <img src="/pictures/echange.png" alt="Échange" />
+                </div>
+                <span>Échange possible dans 48 heures.</span>
+              </div>
+            </>
+          )}
         </div>
       </main>
 
-      <ProductReviewsSection productId={product.id} />
+      {/* ==========================================================================
+         Product Videos Showcase Section
+         ========================================================================== */}
+      {activeProduct?.videos?.length > 0 && (
+        <section className="product_videos_section" id="product_videos_section" aria-label="Vidéos du produit">
+          <h2 className="product_videos_title">Vidéos du produit</h2>
+
+          {/* Main 9:16 Video Container with custom restricted controls (Play/Pause & Seekbar ONLY) */}
+          <ProductVideoPlayer
+            videoUrl={activeProduct.videos[selectedVideoIdx]?.videoUrl}
+          />
+
+          {/* Horizontal Video Carousel with left/right arrows */}
+          {activeProduct.videos.length > 1 && (
+            <div className="product_video_carousel_wrapper">
+              <button
+                type="button"
+                className="scroll_arrow"
+                onClick={() => handleVideoArrow('left')}
+                disabled={selectedVideoIdx === 0}
+                aria-label="Vidéo précédente"
+              >
+                ❮
+              </button>
+
+              <div className="product_video_track" ref={videoTrackRef}>
+                {activeProduct.videos.map((vid, idx) => {
+                  const isActive = idx === selectedVideoIdx;
+                  return (
+                    <button
+                      key={vid.id || idx}
+                      type="button"
+                      className={`product_video_thumb_box${isActive ? ' active' : ''}`}
+                      onClick={() => {
+                        setSelectedVideoIdx(idx);
+                        if (videoTrackRef.current) {
+                          const buttons = videoTrackRef.current.querySelectorAll('.product_video_thumb_box');
+                          if (buttons[idx]) {
+                            buttons[idx].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+                          }
+                        }
+                      }}
+                      aria-label={`Vidéo ${idx + 1}`}
+                    >
+                      <video src={vid.videoUrl} muted preload="metadata" />
+                      <span className="product_video_thumb_play_icon">▶</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                className="scroll_arrow"
+                onClick={() => handleVideoArrow('right')}
+                disabled={selectedVideoIdx === activeProduct.videos.length - 1}
+                aria-label="Vidéo suivante"
+              >
+                ❯
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      <ProductReviewsSection productId={activeProduct.id} />
 
       {recommendations.length > 0 && (
         <section className="recommendations_section">
@@ -516,11 +2073,15 @@ export default function Product() {
 
           <div className="recommendations_grid">
             {recommendations.map((rec) => (
-              <div key={rec.id} className="product_card">
+              <div key={rec.id} className={`product_card${rec.isHidden ? ' product_card--hidden' : ''}`}>
                 <Link to={`/product/${rec.id}`} className="product_card_link">
                   <div className="product_card_img_wrapper">
                     <ProductBadges product={rec} />
-                    <img src={rec.collectionImage || rec.mainImage} alt={rec.name} className="product_card_img" />
+                    <img
+                      src={rec.collectionImage || rec.mainImage}
+                      alt={rec.name}
+                      className="product_card_img"
+                    />
                   </div>
                   <h3 className="product_card_title">{rec.name}</h3>
                   <p className="product_card_price">
@@ -532,8 +2093,8 @@ export default function Product() {
           </div>
 
           <div className="recommendations_cta_wrapper">
-            <Link to={`/collection/${product.category}`} className="collection_btn">
-              TOUTE LA COLLECTION {product.category === 'femme' ? 'FEMME' : 'ENFANT'}
+            <Link to={`/collection/${activeProduct.category}`} className="collection_btn">
+              TOUTE LA COLLECTION {activeProduct.category === 'femme' ? 'FEMME' : 'ENFANT'}
             </Link>
           </div>
         </section>
@@ -544,6 +2105,53 @@ export default function Product() {
         onClose={() => setBuyNowModalOpen(false)}
         buyNowItem={buyNowItem}
       />
+
+      <ShareModal
+        isOpen={shareOpen}
+        onClose={() => setShareOpen(false)}
+        product={activeProduct}
+        image={mainImage || activeProduct?.mainImage}
+        price={getEffectivePrice(activeProduct)}
+      />
+
+      {/* Video Delete Confirmation Modal */}
+      {videoToDelete && (
+        <div
+          className="admin-modal-overlay"
+          onClick={() => setVideoToDelete(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="admin-modal"
+            style={{ maxWidth: '400px', padding: '24px', textAlign: 'center' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', color: '#111' }}>
+              Supprimer cette vidéo ?
+            </h3>
+            <p style={{ margin: '0 0 20px', color: '#666', fontSize: '0.85rem' }}>
+              Cette action supprimera définitivement la vidéo du produit.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="admin-btn secondary"
+                onClick={() => setVideoToDelete(null)}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="admin-btn danger"
+                onClick={handleConfirmDeleteVideo}
+              >
+                Confirmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

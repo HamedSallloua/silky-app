@@ -15,6 +15,7 @@ export const exchangeRepository = {
         id: ex.id,
         exchangeNumber: ex.exchangeNumber,
         exchangeSequence: ex.exchangeSequence,
+        paymentResponsibility: ex.paymentResponsibility || 'customer_paid',
         customer: {
           name: ex.customerName,
           email: ex.customerEmail,
@@ -34,6 +35,8 @@ export const exchangeRepository = {
         subtotal: parseFloat(ex.subtotal),
         deliveryFee: parseFloat(ex.deliveryFee),
         total: parseFloat(ex.totalAmount),
+        productAmountAdded: parseFloat(ex.productAmountAdded) || 0,
+        productRefundObligation: parseFloat(ex.productRefundObligation) || 0,
         createdAt: ex.createdAt,
       });
     }
@@ -51,15 +54,17 @@ export const exchangeRepository = {
     const items = await tx.select().from(exchangeItems).where(eq(exchangeItems.exchangeId, latest.id));
     return {
       ...latest,
+      paymentResponsibility: latest.paymentResponsibility || 'customer_paid',
       items,
     };
   },
 
-  async createExchangeRecord({ orderId, exchangeNumber, exchangeSequence, customerName, customerEmail = null, customerPhone, shippingAddress, subtotal, deliveryFee = 0, totalAmount }, items = [], tx = db) {
+  async createExchangeRecord({ orderId, exchangeNumber, exchangeSequence, paymentResponsibility = 'customer_paid', customerName, customerEmail = null, customerPhone, shippingAddress, subtotal, deliveryFee = 0, totalAmount, productAmountAdded = 0, productRefundObligation = 0 }, items = [], tx = db) {
     const [newExchange] = await tx.insert(orderExchanges).values({
       orderId,
       exchangeNumber,
       exchangeSequence,
+      paymentResponsibility,
       customerName,
       customerEmail,
       customerPhone,
@@ -67,6 +72,8 @@ export const exchangeRepository = {
       subtotal: subtotal.toString(),
       deliveryFee: deliveryFee.toString(),
       totalAmount: totalAmount.toString(),
+      productAmountAdded: (productAmountAdded || 0).toString(),
+      productRefundObligation: (productRefundObligation || 0).toString(),
     }).returning();
 
     for (const item of items) {

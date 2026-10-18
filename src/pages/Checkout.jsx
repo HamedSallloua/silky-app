@@ -1,37 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { useProducts } from '../context/ProductsContext';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../api/client';
+import { api, generateIdempotencyKey } from '../api/client';
 import { formatPrice } from '../utils/formatPrice';
 import '../styles/checkout.css';
 
+
 const TUNISIAN_GOVERNORATES = [
+  'Tunis',
+  'Sousse',
+  'Nabeul',
   'Ariana',
-  'Béja',
+  'Manouba',
+  'Monastir',
+  'Mahdia',
   'Ben Arous',
   'Bizerte',
-  'Gabès',
+  'Kairouan',
+  'Sfax',
+  'Zaghouan',
+  'Beja',
+  'Gabes',
   'Gafsa',
   'Jendouba',
-  'Kairouan',
   'Kasserine',
-  'Kébili',
+  'Kebili',
   'Kef',
-  'Mahdia',
-  'Manouba',
-  'Médenine',
-  'Monastir',
-  'Nabeul',
-  'Sfax',
+  'Medenine',
   'Sidi Bouzid',
   'Siliana',
-  'Sousse',
   'Tataouine',
   'Tozeur',
-  'Tunis',
-  'Zaghouan',
 ];
 
 export default function Checkout() {
@@ -45,30 +46,32 @@ export default function Checkout() {
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
-    email: '',
     phone: '',
     governorate: '',
     address: '',
   });
 
-  // Prefill phone from saved account number when user is logged in
+  const idempotencyKeyRef = useRef(null);
+
   useEffect(() => {
-    if (user?.phoneNumber) {
-      const digits = user.phoneNumber.replace(/\D/g, '').slice(0, 8);
-      setForm((prev) => ({ ...prev, phone: digits }));
+    if (user) {
+      const parts = (user.fullName || user.full_name || '').split(' ');
+      setForm((prev) => ({
+        ...prev,
+        firstName: prev.firstName || parts[0] || '',
+        lastName: prev.lastName || parts.slice(1).join(' ') || '',
+        phone: prev.phone || user.phone || user.phoneNumber || '',
+        address: prev.address || user.address || '',
+      }));
     }
   }, [user]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    if (name === 'phone') {
-      const numericValue = value.replace(/\D/g, '').slice(0, 8);
-      setForm((prev) => ({ ...prev, phone: numericValue }));
-      if (fieldErrors.phone) setFieldErrors((prev) => ({ ...prev, phone: '' }));
-      return;
-    }
     setForm((prev) => ({ ...prev, [name]: value }));
-    if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: '' }));
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => ({ ...prev, [name]: '' }));
+    }
   };
 
   const validateForm = () => {
@@ -77,6 +80,8 @@ export default function Checkout() {
     const trimmedFirstName = (form.firstName || '').trim();
     if (!trimmedFirstName) {
       errors.firstName = 'Le prénom est obligatoire.';
+    } else if (!/^[a-zA-ZÀ-ÿ\s'-]+$/.test(trimmedFirstName)) {
+      errors.firstName = 'Le prénom doit contenir uniquement des lettres.';
     } else if (trimmedFirstName.length < 3) {
       errors.firstName = 'Le prénom doit contenir au moins 3 lettres.';
     } else if (trimmedFirstName.length > 35) {
@@ -85,16 +90,13 @@ export default function Checkout() {
 
     const trimmedLastName = (form.lastName || '').trim();
     if (!trimmedLastName) {
-      errors.lastName = 'Le nom est obligatoire.';
+      errors.lastName = 'Le nom de famille est obligatoire.';
+    } else if (!/^[a-zA-ZÀ-ÿ\s'-]+$/.test(trimmedLastName)) {
+      errors.lastName = 'Le nom de famille doit contenir uniquement des lettres.';
     } else if (trimmedLastName.length < 3) {
-      errors.lastName = 'Le nom doit contenir au moins 3 lettres.';
+      errors.lastName = 'Le nom de famille doit contenir au moins 3 lettres.';
     } else if (trimmedLastName.length > 35) {
-      errors.lastName = 'Le nom ne doit pas dépasser 35 lettres.';
-    }
-
-    const trimmedEmail = (form.email || '').trim();
-    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      errors.email = "Veuillez entrer une adresse e-mail valide.";
+      errors.lastName = 'Le nom de famille ne doit pas dépasser 35 lettres.';
     }
 
     const trimmedPhone = (form.phone || '').trim();
@@ -134,20 +136,33 @@ export default function Checkout() {
     setError('');
     setFieldErrors({});
 
-    const fullShippingAddress = `${form.governorate} — ${form.address.trim()}`;
+    // Ensure a stable idempotency key for this checkout attempt.
+    // Preserved on network retry; reset on successful completion.
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = generateIdempotencyKey();
+    }
+    const idempotencyKey = idempotencyKeyRef.current;
 
     try {
-      const order = await api.checkout({
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
-        email: form.email.trim() || null,
-        phone: form.phone.trim(),
-        address: fullShippingAddress,
-      });
+      const order = await api.checkout(
+        {
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          phone: form.phone.trim(),
+          governorate: form.governorate,
+          address: form.address.trim(),
+        },
+        null,
+        idempotencyKey
+      );
+
+      // Reset idempotency key on success so future checkout gets a new key
+      idempotencyKeyRef.current = null;
       await refreshCart();
       await refreshProducts();
       navigate('/order-confirmation', { state: { order } });
     } catch (err) {
+      // Keep idempotencyKeyRef.current so user retry reuses the same key
       setError(err.message || 'Impossible de finaliser la commande');
     } finally {
       setSubmitting(false);
@@ -231,21 +246,6 @@ export default function Checkout() {
                   <span className="field-error-msg">{fieldErrors.lastName}</span>
                 )}
               </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="email">Adresse e-mail <span style={{ fontWeight: 400, opacity: 0.65, fontSize: '0.85em' }}>(facultatif)</span></label>
-              <input
-                type="email"
-                id="email"
-                name="email"
-                value={form.email}
-                onChange={handleChange}
-                className={fieldErrors.email ? 'input-error' : ''}
-              />
-              {fieldErrors.email && (
-                <span className="field-error-msg">{fieldErrors.email}</span>
-              )}
             </div>
 
             <div className="form-group">

@@ -1,10 +1,11 @@
 import { contactRepository } from '../repositories/contact.repository.js';
 import { AppError } from '../utils/errors.js';
 import { sendContactReplyEmail } from './email.service.js';
+import * as notificationService from './notification.service.js';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export async function submitContactMessage({ userId = null, firstName, lastName, email, message }) {
+export async function submitContactMessage({ userId = null, guestSessionId = null, firstName, lastName, email, message }) {
   const trimmedFirst = (firstName || '').trim();
   if (!trimmedFirst) {
     throw new AppError('Le prénom est obligatoire.', 400);
@@ -40,13 +41,20 @@ export async function submitContactMessage({ userId = null, firstName, lastName,
     throw new AppError('Le message est obligatoire.', 400);
   }
 
-  return contactRepository.createMessage({
+  const result = await contactRepository.createMessage({
     userId,
+    guestSessionId,
     firstName: trimmedFirst,
     lastName: trimmedLast,
     email: trimmedEmail,
     message: trimmedMessage,
   });
+
+  if (result) {
+    await notificationService.createContactMessageNotification(result);
+  }
+
+  return result;
 }
 
 export async function getAllContactMessages() {

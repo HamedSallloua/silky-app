@@ -3,20 +3,30 @@
   position: relative;
   display: flex;
   width: 100%;
-  min-height: 500px;
+  min-height: 625px;
 }
 
 .hero_box.left,
 .hero_box.right {
   flex: 1;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  min-height: 625px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding-bottom: 40px;
   position: relative;
+  overflow: hidden;
+}
+
+.hero_box_bg,
+.hero_single_bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .hero_box.left::before,
@@ -26,12 +36,13 @@
   inset: 0;
   background: rgba(0, 0, 0, 0.15);
   pointer-events: none;
+  z-index: 1;
 }
 
 .hero_box.left .cta_button,
 .hero_box.right .cta_button {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 .hero_box.left {
@@ -49,6 +60,7 @@
   text-align: center;
   color: #ffffff;
   pointer-events: none;
+  z-index: 2;
 }
 
 .hero_text_overlay h1 {
@@ -188,6 +200,12 @@
   color: #ffffff;
 }
 
+.product_badge_hidden {
+  background-color: #fdebd0;
+  color: #d35400;
+  border: 1px solid #f5cba7;
+}
+
 .product_info {
   text-align: center;
   margin-top: 10px;
@@ -247,7 +265,7 @@
   position: relative;
   overflow: hidden;
   width: 100%;
-  height: 500px;
+  height: 750px;
   cursor: grab;
   touch-action: pan-y pinch-zoom;
   user-select: none;
@@ -282,16 +300,16 @@
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: 6px;
+  border-radius: 9px;
   overflow: hidden;
   position: relative;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
   text-decoration: none;
   transition: box-shadow 0.3s ease;
 }
 
 .coverflow_card_link:hover {
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
 }
 
 .coverflow_card:not(.coverflow_card_active) .coverflow_card_link {
@@ -310,28 +328,36 @@
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 20px 12px 16px;
+  padding: 30px 18px 24px;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
   text-align: center;
 }
 
 .coverflow_card_title {
   color: #ffffff;
-  font-size: 16px;
+  font-size: 24px;
   font-weight: 600;
-  margin: 0 0 8px;
+  margin: 0 0 12px;
   line-height: 1.3;
 }
 
 .coverflow_card_cta {
   display: inline-block;
   color: #ffffff;
-  font-size: 11px;
+  font-size: 17px;
   font-weight: 600;
-  letter-spacing: 0.5px;
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  padding: 4px 14px;
-  border-radius: 2px;
+  letter-spacing: 0.75px;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  padding: 6px 21px;
+  border-radius: 3px;
+}
+
+.coverflow_card_cta:hover,
+.coverflow_card_cta:active,
+.coverflow_card_link:hover .coverflow_card_cta,
+.coverflow_card_link:active .coverflow_card_cta {
+  background: #ffffff;
+  color: #000000;
 }
 
 .product_carousel_viewport {
@@ -377,25 +403,50 @@
   transform: translateY(-50%);
   z-index: 40;
   background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #ddd;
+  border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 50%;
   width: 44px;
   height: 44px;
-  font-size: 26px;
+  font-size: 16px;
   line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #000;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  padding: 0;
+  user-select: none;
+  color: #111111;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  transition: opacity 0.25s ease, transform 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
   pointer-events: auto;
 }
 
 .carousel_arrow:hover {
   background: #ffffff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  color: var(--color-primary, #8D191C);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transform: translateY(-50%) scale(1.12);
+}
+
+.carousel_arrow:active {
+  transform: translateY(-50%) scale(0.92);
+  background: #ffffff;
+  color: var(--color-primary, #8D191C);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
+.carousel_arrow:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(141, 25, 28, 0.25), 0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+.carousel_arrow:disabled,
+.carousel_arrow[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  transform: translateY(-50%);
 }
 
 .carousel_arrow_left {
@@ -412,13 +463,13 @@
   }
 
   .coverflow_viewport {
-    height: 480px;
+    height: 580px;
   }
 
   .carousel_arrow {
     width: 36px;
     height: 36px;
-    font-size: 22px;
+    font-size: 13px;
   }
 
   .carousel_arrow_left {
@@ -436,13 +487,13 @@
   }
 
   .coverflow_viewport {
-    height: 470px;
+    height: 480px;
   }
 
   .carousel_arrow {
-    width: 32px;
-    height: 32px;
-    font-size: 20px;
+    width: 34px;
+    height: 34px;
+    font-size: 12px;
   }
 
   .carousel_arrow_left {
@@ -454,11 +505,17 @@
   }
 
   .coverflow_card_title {
-    font-size: 14px;
+    font-size: 17px;
+    margin: 0 0 8px;
   }
 
   .coverflow_card_overlay {
-    padding: 14px 8px 12px;
+    padding: 16px 10px 14px;
+  }
+
+  .coverflow_card_cta {
+    font-size: 13px;
+    padding: 4px 14px;
   }
 }
 
@@ -494,30 +551,7 @@
   flex-direction: column;
   gap: 6px;
   width: 100%;
-  margin-top: 12px;
-}
-
-.fav_add_to_cart_btn {
-  width: 100%;
-  background-color: var(--color-primary, #8d191c);
-  color: #ffffff;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.85rem;
-  border: none;
-  cursor: pointer;
-  transition: opacity 0.2s ease, background-color 0.2s ease;
-}
-
-.fav_add_to_cart_btn:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.fav_add_to_cart_btn:disabled {
-  background-color: #2e7d32;
-  opacity: 1;
-  cursor: default;
+  margin-top: 8px;
 }
 
 .fav_remove_btn {
@@ -566,4 +600,377 @@
   margin-top: 4px;
   font-weight: 500;
 }
+
+/* --- Hero Option 2: Single Image Hero --- */
+.hero_single_container {
+  position: relative;
+  width: 100%;
+  min-height: 625px;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.hero_single_container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.35) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hero_single_content {
+  position: relative;
+  z-index: 2;
+  max-width: 580px;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.hero_single_content.left {
+  margin-left: 6%;
+  margin-right: auto;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.hero_single_content.right {
+  margin-right: 6%;
+  margin-left: auto;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.hero_single_content h1 {
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #ffffff;
+  margin: 0 0 14px 0;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.hero_single_content p {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #ffffff;
+  margin: 0 0 24px 0;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* --- Hero Option 3: Carousel Hero --- */
+.hero_carousel_wrapper {
+  position: relative;
+  width: 100%;
+  min-height: 625px;
+  overflow: hidden;
+}
+
+.hero_carousel_track {
+  display: flex;
+  width: 100%;
+  min-height: 625px;
+  transition: transform 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hero_carousel_slide {
+  flex: 0 0 100%;
+  width: 100%;
+  min-height: 625px;
+}
+
+.hero_carousel_arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  border: none;
+  font-size: 20px;
+  font-weight: bold;
+  color: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: background-color 0.2s, transform 0.2s;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.hero_carousel_arrow:hover {
+  background: #ffffff;
+  transform: translateY(-50%) scale(1.08);
+}
+
+.hero_carousel_arrow_left {
+  left: 20px;
+}
+
+.hero_carousel_arrow_right {
+  right: 20px;
+}
+
+.hero_carousel_dots {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  z-index: 10;
+}
+
+.hero_carousel_dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  border: 2px solid #ffffff;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.hero_carousel_dot.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  transform: scale(1.25);
+}
+
+/* ==========================================================================
+   Hero Responsive Breakpoints (Tablet & Mobile only: <= 1024px)
+   ========================================================================== */
+
+/* Laptop / Medium Screens (<= 1024px) */
+@media (max-width: 1024px) {
+  .hero_container,
+  .hero_single_container,
+  .hero_carousel_wrapper {
+    min-height: unset;
+    aspect-ratio: 1200 / 625;
+  }
+
+  .hero_box.left,
+  .hero_box.right,
+  .hero_carousel_track,
+  .hero_carousel_slide {
+    min-height: unset;
+    height: 100%;
+  }
+
+  .hero_text_overlay {
+    top: 22%;
+  }
+
+  .hero_text_overlay h1 {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+
+  .hero_text_overlay p {
+    font-size: 14px;
+  }
+
+  .hero_box.left,
+  .hero_box.right {
+    padding-bottom: 30px;
+  }
+
+  .cta_button {
+    padding: 10px 36px;
+    font-size: 14px;
+  }
+
+  .hero_single_content {
+    max-width: 500px;
+    padding: 30px;
+  }
+
+  .hero_single_content h1 {
+    font-size: 32px;
+    margin-bottom: 10px;
+  }
+
+  .hero_single_content p {
+    font-size: 16px;
+    margin-bottom: 18px;
+  }
+
+  .hero_carousel_arrow {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
+  .hero_carousel_dots {
+    bottom: 18px;
+    gap: 8px;
+  }
+}
+
+/* Tablet (<= 768px) */
+@media (max-width: 768px) {
+  .hero_text_overlay {
+    top: 18%;
+    padding: 0 12px;
+  }
+
+  .hero_text_overlay h1 {
+    font-size: 22px;
+    margin-bottom: 4px;
+  }
+
+  .hero_text_overlay p {
+    font-size: 12px;
+  }
+
+  .hero_box.left,
+  .hero_box.right {
+    padding-bottom: 20px;
+  }
+
+  .cta_button {
+    padding: 8px 22px;
+    font-size: 12px;
+    border-radius: 6px;
+  }
+
+  .hero_single_content {
+    padding: 20px 24px;
+    max-width: 80%;
+  }
+
+  .hero_single_content.left {
+    margin-left: 5%;
+  }
+
+  .hero_single_content.right {
+    margin-right: 5%;
+  }
+
+  .hero_single_content h1 {
+    font-size: 22px;
+    margin-bottom: 6px;
+  }
+
+  .hero_single_content p {
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+
+  .hero_carousel_arrow {
+    width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
+
+  .hero_carousel_arrow_left {
+    left: 12px;
+  }
+
+  .hero_carousel_arrow_right {
+    right: 12px;
+  }
+
+  .hero_carousel_dots {
+    bottom: 12px;
+    gap: 7px;
+  }
+
+  .hero_carousel_dot {
+    width: 9px;
+    height: 9px;
+  }
+}
+
+/* Mobile Devices (<= 480px) */
+@media (max-width: 480px) {
+  .hero_text_overlay {
+    top: 10%;
+    padding: 0 8px;
+  }
+
+  .hero_text_overlay h1 {
+    font-size: 15px;
+    margin-bottom: 2px;
+  }
+
+  .hero_text_overlay p {
+    font-size: 9.5px;
+    line-height: 1.25;
+    max-width: 92%;
+    margin: 0 auto;
+  }
+
+  .hero_box.left,
+  .hero_box.right {
+    padding-bottom: 12px;
+  }
+
+  .cta_button {
+    padding: 5px 14px;
+    font-size: 11px;
+    border-radius: 4px;
+  }
+
+  .hero_single_content {
+    padding: 12px 16px;
+    max-width: 85%;
+  }
+
+  .hero_single_content.left {
+    margin-left: 4%;
+  }
+
+  .hero_single_content.right {
+    margin-right: 4%;
+  }
+
+  .hero_single_content h1 {
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+
+  .hero_single_content p {
+    font-size: 10px;
+    margin-bottom: 8px;
+    line-height: 1.25;
+  }
+
+  .hero_carousel_arrow {
+    width: 26px;
+    height: 26px;
+    font-size: 10px;
+  }
+
+  .hero_carousel_arrow_left {
+    left: 6px;
+  }
+
+  .hero_carousel_arrow_right {
+    right: 6px;
+  }
+
+  .hero_carousel_dots {
+    bottom: 8px;
+    gap: 5px;
+  }
+
+  .hero_carousel_dot {
+    width: 7px;
+    height: 7px;
+  }
+}
+
 

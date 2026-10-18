@@ -11,7 +11,7 @@ export async function get(_req, res) {
 }
 
 export async function update(req, res) {
-  const { primary, secondary, heroLeftImage, heroRightImage } = req.body;
+  const { primary, secondary, heroLeftImage, heroRightImage, announcements, announcementsHidden, heroConfig } = req.body;
   if (!primary || !secondary) {
     return res.status(400).json({ error: 'primary and secondary colors required' });
   }
@@ -22,6 +22,9 @@ export async function update(req, res) {
       secondary,
       heroLeftImage,
       heroRightImage,
+      announcements,
+      announcementsHidden,
+      heroConfig,
     });
     res.json(theme);
   } catch (err) {

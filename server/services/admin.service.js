@@ -1,12 +1,14 @@
 import { createOrder } from './order.service.js';
+import { resolveGovernorateSync } from '../config/governorates.js';
 import { AppError } from '../utils/errors.js';
 
 export async function createManualOrder({
   customerName,
   phoneNumber,
-  orderSource,
   items,
   customerEmail = null,
+  governorateId = null,
+  governorate = null,
   shippingAddress,
   deliveryFee = null,
 }) {
@@ -18,12 +20,19 @@ export async function createManualOrder({
     throw new AppError('Au moins un article est requis', 400);
   }
 
-  const MANUAL_ORDER_SOURCES = ['social_media', 'instagram', 'whatsapp', 'phone'];
-  if (!MANUAL_ORDER_SOURCES.includes(orderSource)) {
-    throw new AppError(
-      "orderSource must be 'social_media', 'phone', 'instagram', or 'whatsapp'",
-      400
-    );
+  let resolvedGovId = null;
+  let resolvedGovName = null;
+
+  const rawGov = governorateId ?? governorate;
+  if (rawGov !== null && rawGov !== undefined && (typeof rawGov !== 'string' || rawGov.trim() !== '')) {
+    const resolved = resolveGovernorateSync(rawGov);
+    if (!resolved) {
+      throw new AppError('Gouvernorat invalide.', 400);
+    }
+    resolvedGovId = resolved.id;
+    resolvedGovName = resolved.name;
+  } else {
+    throw new AppError('Le gouvernorat est obligatoire.', 400);
   }
 
   const orderNumber = `SLK-M-${Date.now().toString().slice(-8)}`;
@@ -34,11 +43,14 @@ export async function createManualOrder({
       email: customerEmail?.trim() || null,
       phone: phoneNumber.trim(),
       address: shippingAddress?.trim() || 'Commande manuelle (hors ligne)',
+      governorateId: resolvedGovId,
+      governorate: resolvedGovName,
     },
     items,
     userId: null,
-    orderSource,
     deliveryFee,
     orderNumber,
+    allowCustomPrices: true,
   });
 }
+

@@ -6,9 +6,10 @@ import {
   timestamp,
   pgEnum,
   index,
+  check,
 } from 'drizzle-orm/pg-core';
 
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 export const userRoleEnum = pgEnum(
   'user_role',
@@ -54,6 +55,12 @@ export const users = pgTable(
       .defaultNow()
       .notNull(),
   },
+  (t) => [
+    check(
+      'users_email_or_phone_required',
+      sql`${t.email} IS NOT NULL OR ${t.phoneNumber} IS NOT NULL`
+    ),
+  ],
 );
 
 export const passwordResets = pgTable(

@@ -82,7 +82,7 @@ export default function ReviewsSection({ ratingText, layout = 'default' }) {
             <InfiniteMarquee className="gallery_marquee" orientation="horizontal" speed={30} stepAmount={255}>
               {galleryItemsToRender.map((image, index) => (
                 <div key={image.id || image.src || index} className="gallery_image_item">
-                  <img src={image.src} alt={image.alt || `Avis client ${index + 1}`} className="review_gallery_img" />
+                  <img src={image.src} alt={image.alt || `Avis client ${index + 1}`} className="review_gallery_img" draggable={false} />
                 </div>
               ))}
             </InfiniteMarquee>

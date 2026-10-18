@@ -6,6 +6,7 @@ function serializeMessage(row) {
   return {
     id: row.id,
     userId: row.userId,
+    guestSessionId: row.guestSessionId || row.guest_session_id || null,
     firstName: row.firstName,
     lastName: row.lastName,
     email: row.email,
@@ -17,9 +18,10 @@ function serializeMessage(row) {
 }
 
 export const contactRepository = {
-  async createMessage({ userId = null, firstName, lastName, email, message }, tx = db) {
+  async createMessage({ userId = null, guestSessionId = null, firstName, lastName, email, message }, tx = db) {
     const [row] = await tx.insert(contactMessages).values({
-      userId,
+      userId: userId || null,
+      guestSessionId: userId ? null : (guestSessionId || null),
       firstName,
       lastName,
       email,

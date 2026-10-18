@@ -11,6 +11,7 @@ export async function submit(req, res) {
 
     const result = await contactService.submitContactMessage({
       userId: req.user?.id || null,
+      guestSessionId: req.user?.id ? null : (req.guestSessionId || null),
       firstName: (firstName || prenom || ''),
       lastName: (lastName || nom || ''),
       email: (email || ''),
@@ -53,4 +54,3 @@ export async function reply(req, res) {
     sendError(res, err);
   }
 }
-

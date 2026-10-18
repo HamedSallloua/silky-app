@@ -7,7 +7,7 @@ import {
   index,
 } from 'drizzle-orm/pg-core';
 
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { users } from './users.model.js';
 
 export const contactMessages = pgTable(
@@ -18,6 +18,8 @@ export const contactMessages = pgTable(
     userId: uuid('user_id').references(() => users.id, {
       onDelete: 'set null',
     }),
+
+    guestSessionId: uuid('guest_session_id'),
 
     firstName: varchar('first_name', {
       length: 255,
@@ -51,6 +53,9 @@ export const contactMessages = pgTable(
   },
   (t) => [
     index('idx_contact_messages_created_at').on(t.createdAt),
+    index('idx_contact_messages_guest_session_id')
+      .on(t.guestSessionId)
+      .where(sql`${t.guestSessionId} IS NOT NULL`),
   ],
 );
 

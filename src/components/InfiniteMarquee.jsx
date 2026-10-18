@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export default function InfiniteMarquee({
   children,
@@ -9,12 +9,16 @@ export default function InfiniteMarquee({
   showArrows = true,
   className = '',
 }) {
+  const viewportRef = useRef(null);
   const trackRef = useRef(null);
   const sequenceRef = useRef(null);
   const posRef = useRef(0);
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef(0);
   const startPosRef = useRef(0);
+  const dragMovedRef = useRef(false);
+  const justDraggedRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const isVertical = orientation === 'vertical';
 
@@ -61,6 +65,43 @@ export default function InfiniteMarquee({
     return () => cancelAnimationFrame(rafId);
   }, [speed, isVertical, direction, updateTransform]);
 
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    const onWheel = (e) => {
+      if (isVertical) {
+        if (Math.abs(e.deltaY) >= Math.abs(e.deltaX) && Math.abs(e.deltaY) > 0) {
+          const seq = sequenceRef.current;
+          const size = seq ? seq.offsetHeight : 0;
+          if (size > 0) {
+            e.preventDefault();
+            posRef.current += e.deltaY;
+            while (posRef.current >= size) posRef.current -= size;
+            while (posRef.current < 0) posRef.current += size;
+            updateTransform();
+          }
+        }
+      } else {
+        const delta = Math.abs(e.deltaX) >= Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+        if (delta !== 0) {
+          const seq = sequenceRef.current;
+          const size = seq ? seq.offsetWidth : 0;
+          if (size > 0) {
+            e.preventDefault();
+            posRef.current += delta;
+            while (posRef.current >= size) posRef.current -= size;
+            while (posRef.current < 0) posRef.current += size;
+            updateTransform();
+          }
+        }
+      }
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [isVertical, updateTransform]);
+
   const handleArrowClick = (dirMultiplier) => {
     const seq = sequenceRef.current;
     const size = seq ? (isVertical ? seq.offsetHeight : seq.offsetWidth) : 0;
@@ -81,16 +122,24 @@ export default function InfiniteMarquee({
 
   const handlePointerDown = (e) => {
     if (e.target.closest('.ticker_arrow_btn')) return;
+    if (e.button !== undefined && e.button !== 0) return;
     isDraggingRef.current = true;
+    dragMovedRef.current = false;
     dragStartRef.current = isVertical ? e.clientY : e.clientX;
     startPosRef.current = posRef.current;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsDragging(true);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (_) {}
   };
 
   const handlePointerMove = (e) => {
     if (!isDraggingRef.current) return;
     const current = isVertical ? e.clientY : e.clientX;
     const delta = dragStartRef.current - current;
+    if (Math.abs(delta) > 3) {
+      dragMovedRef.current = true;
+    }
     const seq = sequenceRef.current;
     const size = seq ? (isVertical ? seq.offsetHeight : seq.offsetWidth) : 0;
 
@@ -110,19 +159,42 @@ export default function InfiniteMarquee({
   const handlePointerUp = (e) => {
     if (!isDraggingRef.current) return;
     isDraggingRef.current = false;
+    setIsDragging(false);
+    if (dragMovedRef.current) {
+      justDraggedRef.current = true;
+    }
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch (_) {}
   };
 
+  const handlePointerCancel = (e) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    setIsDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (_) {}
+  };
+
+  const handleClickCapture = (e) => {
+    if (justDraggedRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      justDraggedRef.current = false;
+    }
+  };
+
   return (
     <div className={`infinite_marquee ${orientation} ${className}`}>
       <div
-        className="infinite_marquee_viewport"
+        ref={viewportRef}
+        className={`infinite_marquee_viewport${isDragging ? ' is_dragging' : ''}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onClickCapture={handleClickCapture}
       >
         <div ref={trackRef} className="infinite_marquee_track">
           <div ref={sequenceRef} className={`infinite_marquee_sequence ${orientation}`}>
@@ -145,7 +217,7 @@ export default function InfiniteMarquee({
             }}
             aria-label={isVertical ? 'Défiler vers le haut' : 'Défiler vers la gauche'}
           >
-            {isVertical ? '▲' : '❮'}
+            <span className={isVertical ? 'ticker_arrow_icon_vertical' : undefined}>❮</span>
           </button>
           <button
             type="button"
@@ -156,7 +228,7 @@ export default function InfiniteMarquee({
             }}
             aria-label={isVertical ? 'Défiler vers le bas' : 'Défiler vers la droite'}
           >
-            {isVertical ? '▼' : '❯'}
+            <span className={isVertical ? 'ticker_arrow_icon_vertical' : undefined}>❯</span>
           </button>
         </>
       )}

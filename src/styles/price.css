@@ -84,3 +84,33 @@
   background-color: #111111;
   color: #ffffff;
 }
+
+.product_badge_hidden {
+  background-color: #fdebd0;
+  color: #d35400;
+  border: 1px solid #f5cba7;
+}
+
+/* Hidden product presentation for administrators */
+.product_card--hidden .product_img,
+.product_card--hidden .product_card_img,
+.coverflow_card--hidden .coverflow_card_img,
+.search_dropdown_item--hidden .search_dropdown_img {
+  opacity: 0.55;
+  filter: grayscale(40%);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.product_card--hidden:hover .product_img,
+.product_card--hidden:hover .product_card_img,
+.coverflow_card--hidden:hover .coverflow_card_img,
+.search_dropdown_item--hidden:hover .search_dropdown_img {
+  opacity: 0.85;
+  filter: grayscale(10%);
+}
+
+.product_card--hidden .product_name,
+.product_card--hidden .product_card_title,
+.coverflow_card--hidden .coverflow_card_title {
+  opacity: 0.75;
+}

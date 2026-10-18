@@ -9,5 +9,6 @@ router.use(optionalAuthMiddleware);
 router.get('/', cartController.getCart);
 router.post('/items', cartController.addItem);
 router.delete('/items/:id', cartController.removeItem);
+router.delete('/', cartController.clearCart);
 
 export default router;

@@ -18,14 +18,15 @@ export function renderEmailLayout({ title, contentHtml, previewText = '' }) {
   const currentYear = new Date().getFullYear();
 
   return `<!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <title>${escapeHtml(title || 'Silky')}</title>
-  ${previewText ? `<div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">${escapeHtml(previewText)}</div>` : ''}
 </head>
 <body style="margin:0;padding:0;background-color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Georgia,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+  ${previewText ? `<div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;mso-hide:all;">${escapeHtml(previewText)}</div>` : ''}
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;padding:40px 16px;">
     <tr>
       <td align="center">
@@ -33,7 +34,7 @@ export function renderEmailLayout({ title, contentHtml, previewText = '' }) {
           <!-- Header -->
           <tr>
             <td align="center" style="background-color:#F3EBEC;padding:28px 24px;text-align:center;">
-              <img src="cid:silky-logo" alt="SILKY" width="120" style="display:block;margin:0 auto;width:120px;max-width:120px;height:auto;border:0;outline:none;text-decoration:none;" />
+              <img src="cid:silky-logo" alt="Silky" width="120" style="display:block;margin:0 auto;width:120px;max-width:120px;height:auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" />
             </td>
           </tr>
           <!-- Main Content -->
